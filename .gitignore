@@ -26,3 +26,4 @@ paper/*.fdb_latexmk
 paper/*.fls
 paper/*.synctex.gz
 paper/main.pdf
+paper/main_ieee.pdf

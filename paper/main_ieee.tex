@@ -1,0 +1,529 @@
+\documentclass[conference]{IEEEtran}
+% ---------------------------------------------------------------------------------------------
+% IEEE conference version (target: 9 pages including references).
+% Experimental values come from numbers.tex (written by src/export_latex.py from
+% results/metrics.json); missing values print as a red [TBD].
+% ---------------------------------------------------------------------------------------------
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{textcomp}
+\usepackage[hidelinks]{hyperref}
+
+% ----------------------------------------------------------------- result macros
+\InputIfFileExists{numbers.tex}{}{}
+\newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
+\makeatletter
+\newcommand{\res}[2]{\@ifundefined{res@#1@#2}{\tbd}{\@nameuse{res@#1@#2}}}
+\newcommand{\respm}[2]{\@ifundefined{res@#1@#2}{\tbd}{\@nameuse{res@#1@#2}%
+  \@ifundefined{resstd@#1@#2}{}{\,{\tiny$\pm$\@nameuse{resstd@#1@#2}}}}}
+\newcommand{\teach}[1]{\@ifundefined{teach@#1}{\tbd}{\@nameuse{teach@#1}}}
+\newcommand{\envv}[1]{\@ifundefined{env@#1}{\tbd}{\@nameuse{env@#1}}}
+\makeatother
+\newcommand{\interp}[1]{\textcolor{red}{\textit{[Pending results: #1]}}}
+\newcommand{\figorbox}[2]{\IfFileExists{figures/#1}{\includegraphics[width=#2]{figures/#1}}%
+  {\fbox{\parbox[c][3cm][c]{\dimexpr#2-2\fboxsep-2\fboxrule\relax}{\centering\textcolor{red}{\textbf{[Figure pending]}}\\\scriptsize\texttt{\detokenize{#1}}}}}}
+\newcommand{\Lq}{\mathcal{L}}
+
+\newcommand{\Ea}{exp1_original_minilm}
+\newcommand{\Eb}{exp2_parser_plus_original}
+\newcommand{\Ep}{ref_parser_only}
+\newcommand{\Ec}{exp3_math_full}
+\newcommand{\Ecb}{exp3b_math_budget}
+\newcommand{\Eda}{exp4a_teacher_raw}
+\newcommand{\Edb}{exp4b_teacher_verified}
+\newcommand{\Ee}{exp5_hybrid_finetuned_plus_parser}
+\newcommand{\Ef}{exp6_learned_projection}
+\newcommand{\Eabs}{exp3_math_full_absdist}
+
+\begin{document}
+
+\title{Numerical Intelligence Transfer: Can Small LLMs\\Teach Sentence Encoders to Understand Numbers?}
+
+\author{\IEEEauthorblockN{Tariq Mahmood}
+\IEEEauthorblockA{\textit{AI \& Data Science Lab, DIMES} \\
+\textit{University of Calabria}\\
+Rende (CS), Italy}}
+
+\maketitle
+
+\begin{abstract}
+Dense sentence encoders underpin retrieval-augmented generation, semantic search and entity resolution, yet they
+largely treat numbers as surface tokens: \emph{10\,kg} and \emph{10{,}000\,g} may be far apart, while \emph{10\,kg} and
+\emph{10\,m} look alike. We ask whether the numerical competence of a small instruction-tuned LLM can be
+\emph{transferred} into a lightweight encoder (all-MiniLM-L6-v2) by knowledge distillation, and how one would know
+that the encoder has learned numbers rather than benefiting from a symbolic parser. We contribute (i) a formulation of
+numerical desiderata for cosine-similarity spaces, including what symmetric similarity cannot express; (ii) a
+distillation protocol with a teacher (Qwen2.5) verified against deterministic ground truth, paired with a
+budget-matched no-teacher control that isolates the teacher's contribution; (iii) attribution controls that separate
+embedding-internal learning from parser-driven gains, namely a parser-free numbers-in-words slice and a learned
+numerical projection head; and (iv) a leakage-controlled benchmark of 5{,}010 statements over six physical dimensions,
+with affine temperature handling. We pre-declare hypotheses and decision rules and report preliminary results.
+\end{abstract}
+
+\begin{IEEEkeywords}
+sentence embeddings, numeracy, knowledge distillation, large language models, semantic retrieval
+\end{IEEEkeywords}
+
+\ifdefined\ResultsAreMock
+\noindent\fcolorbox{red}{red!8}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{\footnotesize\textbf{Pipeline-check build:}
+numbers come from a random tiny encoder and a mock teacher; they are not findings.}}
+\fi
+
+% =============================================================================================
+\section{Introduction}
+% =============================================================================================
+Take ``The package weighs 10\,kg'', ``The package weighs 10{,}000\,g'' and ``The package is 10\,m long''. The first two
+state the same quantity; the third a different dimension. A general-purpose sentence encoder~\cite{reimers2019sbert}
+typically scores the third at least as close to the first as the second: the wording overlaps, the digits match, and
+the encoder has no notion of unit conversion. Probing studies find magnitude only partly and brittlely decodable from
+embeddings~\cite{naik2019numeracy,wallace2019numbers,zhang2020scales,thawani2021survey}. In retrieval-augmented
+generation~\cite{lewis2020rag} and in entity resolution over numeric attributes, such errors propagate silently.
+
+Small instruction-tuned LLMs such as Qwen2.5~\cite{qwen2025qwen25} often answer ``is 10\,kg the same as 10{,}000\,g?''
+correctly, but are too costly to run inside every similarity computation. \textbf{Numerical Intelligence Transfer}
+distils this behaviour into a compact student encoder~\cite{hinton2015distilling,reimers2020multilingual} so that it
+is paid for once, at training time.
+
+The idea is simple; evaluating it honestly is not. Three confounds can make a transfer method look successful when it
+is not. \textbf{(C1) Cosine is not numeracy}: higher similarity on equivalent pairs is meaningless if all similarities
+rise. \textbf{(C2) The parser confound}: any pipeline that extracts numbers symbolically excels on parsable text,
+whether or not the embedding learns anything. \textbf{(C3) The verification paradox}: if teacher labels are filtered
+against ground truth---good practice---the surviving labels \emph{equal} that ground truth on every determinable
+relation, so what does the teacher add?
+
+\textbf{Contributions.}
+\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
+\item A formulation of numerical desiderata for embedding spaces, including what symmetric cosine geometry cannot
+express (\S\ref{sec:form}).
+\item A verified-teacher distillation protocol with five objectives and three representation choices: a single space,
+a learned numerical projection, and a parser hybrid (\S\ref{sec:method}).
+\item An experimental design whose controls target C1--C3: hard-negative discrimination, a budget-matched no-teacher
+ablation, a parser-free stress slice and quantity-level leakage control (\S\ref{sec:design}).
+\item Pre-declared hypotheses and decision rules with preliminary results (\S\ref{sec:results}), and a discussion of
+where LLM teachers can \emph{genuinely} add information (\S\ref{sec:disc}).
+\end{itemize}
+
+% =============================================================================================
+\section{Related Work}
+% =============================================================================================
+\textbf{Numeracy in learned representations.} Naik et al.~\cite{naik2019numeracy} and Wallace et
+al.~\cite{wallace2019numbers} probe word and contextual embeddings for magnitude and ordering. They find partial but
+brittle numeracy that degrades outside the training range. Zhang et al.~\cite{zhang2020scales} show that embeddings
+encode physical scales only coarsely, and NumerSense~\cite{lin2020numersense} probes numerical commonsense in masked
+language models. Thawani et al.~\cite{thawani2021survey} survey number representations and argue for numeracy-aware
+design.
+
+\textbf{Numeracy-preserving representations.} Explicit numeric encodings such as DICE~\cite{sundararaman2020dice}
+build numerical distance into the embedding by construction. Language-modelling work improves number
+prediction~\cite{spithourakis2018numeracy}, and Geva et al.~\cite{geva2020injecting} inject numerical reasoning skills
+through synthetic data. These approaches target token-level or generative representations. We target
+\emph{sentence-level retrieval embeddings}, where numbers must coexist with context and meaning.
+
+\textbf{Sentence embeddings and distillation.} Sentence-BERT~\cite{reimers2019sbert} and contrastive objectives such
+as SimCSE~\cite{gao2021simcse} produce the encoders deployed today, and MiniLM~\cite{wang2020minilm} is itself a
+distilled model. Reimers and Gurevych~\cite{reimers2020multilingual} distil an embedding space into a student while
+preserving it, which is the template for our semantic-preservation term. Benchmarks such as
+MTEB~\cite{muennighoff2023mteb} and STS~\cite{cer2017sts} measure general quality but contain few numerically
+discriminative cases.
+
+\textbf{Preserving pretrained behaviour.} Fine-tuning risks catastrophic forgetting. Parameter-space regularisers such
+as EWC~\cite{kirkpatrick2017ewc} and L2-SP~\cite{li2018l2sp} constrain weights; we instead constrain \emph{outputs},
+distilling from the frozen pretrained encoder on general text.
+
+\textbf{Probing methodology and order.} Linear probes measure decodability, not use, and high probe accuracy can
+reflect probe capacity~\cite{hewitt2019control}, so we report geometric and probe metrics separately. Order is
+antisymmetric, and order embeddings~\cite{vendrov2016order} encode it with asymmetric scores; this matters because
+cosine is symmetric (\S\ref{sec:form}).
+
+\textbf{Positioning.} Prior work either \emph{probes} numeracy or \emph{adds} explicit numeric channels. We study
+\emph{transfer} from an LLM teacher into a retrieval encoder. The distinctive element is the set of controls that
+attribute gains to the teacher, the parser or the learned geometry.
+
+% =============================================================================================
+\section{Numerical Desiderata for Embedding Spaces}
+\label{sec:form}
+% =============================================================================================
+Each statement $x$ expresses a quantity $\kappa(x)=(d_x,v_x)$: a dimension $d_x$ (mass, length, time, temperature,
+volume, proportion) and a value $v_x>0$ in a canonical unit (g, m, s, K, L, ratio). Temperature is \emph{affine}
+($v=T_{\mathrm C}+273.15$; $v=(T_{\mathrm F}-32)\tfrac59+273.15$), so ratios and log distances are always taken on the
+absolute scale; Celsius or Fahrenheit ratios are never formed. With normalised embeddings $e(x)$ and
+$s(x,y)=e(x)^\top e(y)$, we ask an embedding to satisfy five desiderata:
+\begin{description}[leftmargin=0pt,itemsep=1pt,topsep=2pt]
+\item[D1 Equivalence.] Equal quantities (10\,kg and 10{,}000\,g; 10 and 10.00, but \emph{not} 10.01) score above
+non-equivalent pairs of the same dimension.
+\item[D2 Graded distance.] For same-dimension pairs, $1-s$ grows monotonically with $|\log_{10}(v_x/v_y)|$. We also
+study relative absolute distance $|v_x-v_y|/\max(v_x,v_y)$. The two disagree, and which is ``right'' depends on the
+application.
+\item[D3 Order.] The ordering $v_x<v_y$ is recoverable from the representation.
+\item[D4 Dimensional separation.] Pairs of different dimensions (10\,kg, 10\,m) score low; no distance between them is
+meaningful.
+\item[D5 Context and semantics.] ``The patient's temperature is 37\,\textdegree C'' and ``the machine operates at
+37\,\textdegree C'' are numerically equal but stay distinct, and general semantic similarity does not degrade.
+\end{description}
+
+\textbf{Three tensions.} (i) \emph{D3 cannot be expressed by cosine}: $s$ is symmetric, so order appears at best as
+betweenness ($s(a,c)<\min(s(a,b),s(b,c))$ for $v_a<v_b<v_c$) or along a probed direction. (ii) \emph{D1 competes with
+D5}: the same quantity in two contexts must be numerically equal yet semantically different. (iii) \emph{D2 competes
+with D1 near the top of the scale}: pushing close pairs towards $s=1$ blurs exact equivalence, so graded targets are
+capped at $c_{\max}<1$. These tensions suggest a single cosine space may be the wrong object; we therefore also test a
+separate numerical subspace and a parser-hybrid similarity.
+
+% =============================================================================================
+\section{Method}
+\label{sec:method}
+% =============================================================================================
+\textbf{Verified teacher.} Qwen2.5-1.5B-Instruct~\cite{qwen2025qwen25} answers, per statement pair: same dimension
+(Yes/No), equivalent after conversion (Yes/No), which is larger (A/B/Equal) and the ratio $A/B$ (a number); and, per
+statement, whether the value is plausible in context (Yes/No). Categorical answers are read from the next-token
+distribution over option tokens in one forward pass, giving a label and a confidence $p$; ratios use greedy decoding.
+Every determinable answer is checked against Python ground truth; LLM output is never ground truth.
+
+\textbf{Objectives.} The student all-MiniLM-L6-v2 minimises
+$\Lq=\lambda_1\Lq_{\mathrm{eq}}+\lambda_2\Lq_{\mathrm{ord}}+\lambda_3\Lq_{\mathrm{dist}}+\lambda_4\Lq_{\mathrm{ctx}}+\lambda_5\Lq_{\mathrm{sem}}$.
+\textbf{Equivalence} uses a confidence-weighted symmetric InfoNCE~\cite{oord2018cpc} over same-context equivalent pairs
+$(a_i,b_i)$ with weights $w_i$ ($p$, or 1 for direct supervision):
+\begin{equation}
+\Lq_{\mathrm{eq}}=-\tfrac{1}{2\sum_i w_i}\textstyle\sum_i w_i\big[\log\sigma_j(s_{a_ib_j}/\tau)_i+\log\sigma_j(s_{b_ia_j}/\tau)_i\big],
+\end{equation}
+with $\sigma_j$ the softmax over in-batch partners. \textbf{Ordering} combines a margin ranking loss on
+a learned direction $r(x)=u^\top e(x)$ with a betweenness loss on ordered triplets
+$v_{\mathrm{lo}}<v_{\mathrm{mid}}<v_{\mathrm{hi}}$ (writing $s_{\mathrm{lh}}=s(x_{\mathrm{lo}},x_{\mathrm{hi}})$, etc.):
+\begin{align}
+\Lq_{\mathrm{ord}}&=\overline{[m_r-r(x_{\mathrm{hi}})+r(x_{\mathrm{lo}})]_+}\nonumber\\
+&\quad+\overline{[s_{\mathrm{lh}}-s_{\mathrm{lm}}+m_t]_+ +[s_{\mathrm{lh}}-s_{\mathrm{mh}}+m_t]_+}.
+\end{align}
+\textbf{Distance} regresses cosine onto a magnitude-similarity target for same-dimension, non-equivalent pairs:
+\begin{align}
+\Lq_{\mathrm{dist}}&=\overline{\big(s(a,b)-t(\Delta)\big)^2},\\
+t(\Delta)&=c_{\min}+(c_{\max}-c_{\min})\,e^{-\Delta/\sigma},\nonumber
+\end{align}
+with $\Delta=|\log_{10}(v_a/v_b)|$ (log mode) or $|v_a-v_b|/\max(v_a,v_b)$ (abs mode); under distillation, $\Delta$ is
+computed from the teacher's ratio. \textbf{Context} places upper bounds on similarity,
+\begin{equation}
+\Lq_{\mathrm{ctx}}=\overline{[s(a,b)-m_k]_+},
+\end{equation}
+where $m_k$ depends on whether the pair has different dimensions, is the same quantity in a different context, or is a
+plausible versus contradictory statement. \textbf{Semantic preservation} distils from the frozen pretrained encoder
+$f_0$ on unlabeled general sentences $g$~\cite{reimers2020multilingual}:
+\begin{equation}
+\Lq_{\mathrm{sem}}=\overline{1-e(g)^\top f_0(g)}.
+\end{equation}
+
+\textbf{Representations.}
+\begin{itemize}[leftmargin=*,itemsep=1pt,topsep=2pt]
+\item \emph{Single space}: all objectives act on $e$; similarity is $s$.
+\item \emph{Learned numerical projection}: a linear head $P\!:\!384\!\to\!128$ receives the numerical objectives on
+$z=\mathrm{norm}(Pe)$, while $\Lq_{\mathrm{sem}}$ acts on $e$. Similarity is $\alpha s+(1-\alpha)z^\top z'$. No parser is
+involved.
+\item \emph{Parser hybrid}: a regex parser extracts $(d,v)$ and gives $s_{\mathrm{num}}$: 1 if equivalent,
+$c_{\max}e^{-\Delta/\sigma}$ if same dimension, 0 otherwise. Similarity is $\alpha s+(1-\alpha)s_{\mathrm{num}}$,
+falling back to $s$ when parsing fails.
+\end{itemize}
+$\alpha$ is tuned on validation in both cases.
+
+\textbf{Training.} AdamW (lr $2{\times}10^{-5}$, weight decay 0.01, 10\,\% warm-up), $4\times300$ steps, batch 32 per
+objective, $\lambda=(1,0.5,1,0.5,1)$, $\tau=0.05$, $m_r=0.1$, $m_t=0.05$, $m_k\in\{0.3,0.85,0.7\}$,
+$(c_{\min},c_{\max})=(0.2,0.9)$, $\sigma_{\log}=1$, $\sigma_{\mathrm{abs}}=0.25$; checkpoint selection by the unweighted
+validation loss, identical across runs; seeds 42--44; teacher budget 4{,}000 training pairs.
+
+% =============================================================================================
+\section{Benchmark and Experimental Design}
+\label{sec:design}
+% =============================================================================================
+\textbf{Data.} A deterministic generator (seed 42) produces \textbf{5{,}010 statements} in seven categories
+(Table~\ref{tab:data}) over six dimensions, with decimals, negative temperatures, thousands separators, scientific
+notation and metric/imperial units, abbreviated or spelled out.
+\emph{Leakage control}: statements are keyed by quantity $(d,v)$; all statements of one quantity---any unit, precision,
+context or category---share an equivalence group and a split, and multi-quantity sets are placed whole. Seven
+templates appear only in test (76 statements). The split is 3{,}541/761/708, with zero groups crossing splits; pairs
+and triplets are built within splits. The test set has 4{,}135 pairs (351 equivalent same-context, 327 same quantity
+in a different context, 1{,}134 close $\le2\times$, 597 mid, 1{,}047 distant $\ge10\times$, 642 cross-dimension, 37
+plausibility) and 2{,}600 ordering triplets.
+\emph{Parser-free slice}: 379 test statements are rewritten with spelled-out integers (``thirty-five degrees
+Celsius''); the parser reads none, so gains there must come from the embedding.
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Benchmark categories (ground truth computed in Python).}
+\label{tab:data}
+\begin{tabular}{@{}clr@{}}
+\toprule
+Cat. & Content & $n$ \\
+\midrule
+A & Magnitude (\textit{The cable measures 0.75 miles.}) & 900 \\
+B & Unit-equivalence sets & 1{,}202 \\
+C & Ordering triplets & 601 \\
+D & Same quantity, several contexts & 602 \\
+E & Precision (10 / 10.0 / 10.00 / 10.01 / 10.1) & 500 \\
+F & Ratios, percentages, differences & 604 \\
+G & Plausible vs contradictory (\textit{0.006 mL syrup dose}) & 601 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Configurations} are listed in Table~\ref{tab:configs}. Three are controls for the confounds:
+\textbf{Exp3b} trains on \emph{exactly} the teacher's pairs with ground-truth labels, so Exp4b$-$Exp3b isolates what
+the teacher adds beyond pair selection and confidence weights (C3); \textbf{Exp6} learns a numerical subspace without
+any parser; and the \textbf{words slice} disables the parser at test time (C2).
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Configurations (identical test data for all).}
+\label{tab:configs}
+\begin{tabular}{@{}lp{6.3cm}@{}}
+\toprule
+Exp1 & Original all-MiniLM-L6-v2, cosine. \\
+Exp2 & Original embeddings + parser hybrid. \\
+Ref. & Parser only (upper reference on digit text). \\
+Exp3 & Direct mathematical supervision, all training pairs. \\
+Exp3b & Direct supervision on the teacher's pair budget (\textbf{no-teacher ablation}). \\
+Exp4a & Same pairs, raw teacher labels (confidence-weighted). \\
+Exp4b & Same pairs, teacher labels kept only where verified. \\
+Exp5 & Exp3 embeddings + parser hybrid. \\
+Exp6 & Learned numerical projection head, no parser. \\
+Exp3-abs & Exp3 with the absolute-distance target. \\
+A--E & Ablation: semantic only $\to$ +equivalence $\to$ +ordering $\to$ +distance $\to$ +context (= Exp3). \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Metrics.} \emph{Equivalence}: ROC-AUC / balanced accuracy of equivalent vs \emph{hard} negatives (same
+dimension, $\le10\times$ apart; C1), with cross-unit and precision subsets. \emph{Order}: per-dimension ridge probe to
+$\log_{10}v$ (pairwise accuracy) and cosine betweenness. \emph{Distance}: Spearman $\rho$ of $1-s$ vs $\Delta$ on
+same-template pairs. \emph{Retrieval}: MRR for same-group retrieval among all test statements. \emph{Context}:
+dimension discrimination $\Pr[s(a,\text{equiv.})>s(a,\text{cross-dim.})]$ and linear context and plausibility probes.
+\emph{Semantics}: STS-B~\cite{cer2017sts} Spearman. Thresholds and $\alpha$ are tuned on validation.
+
+\textbf{Decision rule and hypotheses.} A difference is \emph{supported} if it exceeds $\max(0.01,2\hat\sigma)$
+($\hat\sigma$: seed standard deviation), \emph{contradicted} if it is a decrease of that size, and \emph{inconclusive}
+otherwise. We declare, before seeing results:
+\begin{description}[leftmargin=0pt,itemsep=1pt,topsep=2pt]
+\item[H1] The teacher is reliable on dimension identification but less reliable on cross-unit equivalence and ratios.
+\item[H2] The original encoder fails D1 and D2: its cosine is high for all pair types, so hard-negative equivalence AUC
+is near chance and distance correlation is weak.
+\item[H3] Direct supervision (Exp3) improves D1, D2 and D4 over Exp1 on digit-form text.
+\item[H4] Verified distillation (Exp4b) does not exceed budget-matched direct supervision (Exp3b), because of the
+verification paradox; raw labels (Exp4a) do worse.
+\item[H5] Parser hybrids (Exp2, Exp5) dominate on digit-form text but gain nothing on the words slice.
+\item[H6] Semantic preservation keeps the STS-B drop within 0.02.
+\end{description}
+
+% =============================================================================================
+\section{Preliminary Results}
+\label{sec:results}
+% =============================================================================================
+Hardware: \envv{hardware}; teacher \teach{teacher_model}; means $\pm$ seed standard deviation where available.
+
+\textbf{Teacher reliability (H1).} Table~\ref{tab:teacher} reports the teacher against Python ground truth.
+\interp{which relations are reliable; H1 verdict.}
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Teacher accuracy vs ground truth (\teach{n_pairs} pairs).}
+\label{tab:teacher}
+\begin{tabular}{@{}lr@{\hspace{1.2em}}lr@{}}
+\toprule
+Same dimension & \teach{same_dimension_acc} & Ordering & \teach{ordering_acc} \\
+Equiv.\ (balanced) & \teach{equivalence_balanced_acc} & Ratio within 1\,\% & \teach{ratio_acc_within_1pct} \\
+Equiv.\ AUC (soft) & \teach{equivalence_auc} & Plausibility (bal.) & \teach{compatibility_balanced_acc} \\
+Cross-unit equiv. & \teach{unit_conversion_acc_cross_unit_equiv} & Fully verified & \teach{fully_verified_fraction} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{What the original encoder sees (H2).} Table~\ref{tab:cos} gives the mean cosine by pair type.
+\interp{is the Exp1 column flat across pair types? If so, C1 holds.}
+
+\begin{table}[t]
+\centering\footnotesize
+\caption{Mean cosine by test pair type (Exp3: seed 42).}
+\label{tab:cos}
+\begin{tabular}{@{}lrcc@{}}
+\toprule
+Pair type & $n$ & Exp1 & Exp3 \\
+\midrule
+Equivalent, same context & \res{\Ea}{cosn.equivalent} & \res{\Ea}{cos.equivalent} & \res{\Ec}{cos.equivalent} \\
+Same qty, other context & \res{\Ea}{cosn.equivalent_diff_context} & \res{\Ea}{cos.equivalent_diff_context} & \res{\Ec}{cos.equivalent_diff_context} \\
+Close ($\le2\times$) & \res{\Ea}{cosn.close} & \res{\Ea}{cos.close} & \res{\Ec}{cos.close} \\
+Distant ($\ge10\times$) & \res{\Ea}{cosn.distant} & \res{\Ea}{cos.distant} & \res{\Ec}{cos.distant} \\
+Different dimension & \res{\Ea}{cosn.cross_dimension} & \res{\Ea}{cos.cross_dimension} & \res{\Ec}{cos.cross_dimension} \\
+Plausible vs contradictory & \res{\Ea}{cosn.plausibility} & \res{\Ea}{cos.plausibility} & \res{\Ec}{cos.plausibility} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table*}[t]
+\centering\footnotesize
+\caption{Numerical metrics on digit-form test text. AUC: equivalent vs hard negatives; Order: probe pairwise
+accuracy; Betw.: cosine betweenness; $\rho_{\log}$: Spearman of $1-s$ vs $|\Delta\log_{10}|$ (same template).}
+\label{tab:num}
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+Config & Equiv.\ AUC & Unit conv. & Precision & Order (probe) & Betw. & $\rho_{\log}$ & MRR \\
+\midrule
+Exp1 original & \respm{\Ea}{equivalence.equivalence_auc_hard} & \respm{\Ea}{equivalence.unit_conversion_bal_acc} & \respm{\Ea}{equivalence.precision_bal_acc} & \respm{\Ea}{ordering.probe_pairwise_order_acc} & \respm{\Ea}{ordering.triplet_betweenness_acc} & \respm{\Ea}{distance.same_template_log_distance_spearman} & \respm{\Ea}{retrieval.mrr} \\
+Exp2 parser + original & \respm{\Eb}{equivalence.equivalence_auc_hard} & \respm{\Eb}{equivalence.unit_conversion_bal_acc} & \respm{\Eb}{equivalence.precision_bal_acc} & \respm{\Eb}{ordering.probe_pairwise_order_acc} & \respm{\Eb}{ordering.triplet_betweenness_acc} & \respm{\Eb}{distance.same_template_log_distance_spearman} & \respm{\Eb}{retrieval.mrr} \\
+Ref.\ parser only & \respm{\Ep}{equivalence.equivalence_auc_hard} & \respm{\Ep}{equivalence.unit_conversion_bal_acc} & \respm{\Ep}{equivalence.precision_bal_acc} & \respm{\Ep}{ordering.probe_pairwise_order_acc} & \respm{\Ep}{ordering.triplet_betweenness_acc} & \respm{\Ep}{distance.same_template_log_distance_spearman} & \respm{\Ep}{retrieval.mrr} \\
+\midrule
+Exp3 direct (full) & \respm{\Ec}{equivalence.equivalence_auc_hard} & \respm{\Ec}{equivalence.unit_conversion_bal_acc} & \respm{\Ec}{equivalence.precision_bal_acc} & \respm{\Ec}{ordering.probe_pairwise_order_acc} & \respm{\Ec}{ordering.triplet_betweenness_acc} & \respm{\Ec}{distance.same_template_log_distance_spearman} & \respm{\Ec}{retrieval.mrr} \\
+Exp3b direct (teacher budget) & \respm{\Ecb}{equivalence.equivalence_auc_hard} & \respm{\Ecb}{equivalence.unit_conversion_bal_acc} & \respm{\Ecb}{equivalence.precision_bal_acc} & \respm{\Ecb}{ordering.probe_pairwise_order_acc} & \respm{\Ecb}{ordering.triplet_betweenness_acc} & \respm{\Ecb}{distance.same_template_log_distance_spearman} & \respm{\Ecb}{retrieval.mrr} \\
+Exp4a teacher, raw & \respm{\Eda}{equivalence.equivalence_auc_hard} & \respm{\Eda}{equivalence.unit_conversion_bal_acc} & \respm{\Eda}{equivalence.precision_bal_acc} & \respm{\Eda}{ordering.probe_pairwise_order_acc} & \respm{\Eda}{ordering.triplet_betweenness_acc} & \respm{\Eda}{distance.same_template_log_distance_spearman} & \respm{\Eda}{retrieval.mrr} \\
+Exp4b teacher, verified & \respm{\Edb}{equivalence.equivalence_auc_hard} & \respm{\Edb}{equivalence.unit_conversion_bal_acc} & \respm{\Edb}{equivalence.precision_bal_acc} & \respm{\Edb}{ordering.probe_pairwise_order_acc} & \respm{\Edb}{ordering.triplet_betweenness_acc} & \respm{\Edb}{distance.same_template_log_distance_spearman} & \respm{\Edb}{retrieval.mrr} \\
+Exp5 direct + parser & \respm{\Ee}{equivalence.equivalence_auc_hard} & \respm{\Ee}{equivalence.unit_conversion_bal_acc} & \respm{\Ee}{equivalence.precision_bal_acc} & \respm{\Ee}{ordering.probe_pairwise_order_acc} & \respm{\Ee}{ordering.triplet_betweenness_acc} & \respm{\Ee}{distance.same_template_log_distance_spearman} & \respm{\Ee}{retrieval.mrr} \\
+Exp6 learned projection & \respm{\Ef}{equivalence.equivalence_auc_hard} & \respm{\Ef}{equivalence.unit_conversion_bal_acc} & \respm{\Ef}{equivalence.precision_bal_acc} & \respm{\Ef}{ordering.probe_pairwise_order_acc} & \respm{\Ef}{ordering.triplet_betweenness_acc} & \respm{\Ef}{distance.same_template_log_distance_spearman} & \respm{\Ef}{retrieval.mrr} \\
+Exp3-abs (absolute distance) & \respm{\Eabs}{equivalence.equivalence_auc_hard} & \respm{\Eabs}{equivalence.unit_conversion_bal_acc} & \respm{\Eabs}{equivalence.precision_bal_acc} & \respm{\Eabs}{ordering.probe_pairwise_order_acc} & \respm{\Eabs}{ordering.triplet_betweenness_acc} & \respm{\Eabs}{distance.same_template_log_distance_spearman} & \respm{\Eabs}{retrieval.mrr} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{table*}[t]
+\centering\footnotesize
+\caption{Context, semantics and the parser-free slice (numbers in words; hybrids fall back to their embedding).}
+\label{tab:ctxwords}
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+& \multicolumn{4}{c}{Context and semantics} & \multicolumn{3}{c}{Words slice vs digits} \\
+\cmidrule(lr){2-5}\cmidrule(l){6-8}
+Config & Dim.\ discrim. & Context probe & Plausibility probe & STS-B $\rho$ & MRR (digits) & MRR (words) & Equiv.\ AUC (words) \\
+\midrule
+Exp1 original & \respm{\Ea}{context.dimension_discrimination_acc} & \respm{\Ea}{context.context_probe_acc} & \respm{\Ea}{context.plausibility_probe_acc} & \respm{\Ea}{semantic.stsb_spearman} & \respm{\Ea}{retrieval.mrr} & \respm{\Ea}{stress_words.words_mrr} & \respm{\Ea}{stress_words.words_equivalence_auc} \\
+Exp2 parser + original & \respm{\Eb}{context.dimension_discrimination_acc} & \respm{\Eb}{context.context_probe_acc} & \respm{\Eb}{context.plausibility_probe_acc} & \respm{\Eb}{semantic.stsb_spearman} & \respm{\Eb}{retrieval.mrr} & \respm{\Eb}{stress_words.words_mrr} & \respm{\Eb}{stress_words.words_equivalence_auc} \\
+Exp3 direct & \respm{\Ec}{context.dimension_discrimination_acc} & \respm{\Ec}{context.context_probe_acc} & \respm{\Ec}{context.plausibility_probe_acc} & \respm{\Ec}{semantic.stsb_spearman} & \respm{\Ec}{retrieval.mrr} & \respm{\Ec}{stress_words.words_mrr} & \respm{\Ec}{stress_words.words_equivalence_auc} \\
+Exp4b teacher, verified & \respm{\Edb}{context.dimension_discrimination_acc} & \respm{\Edb}{context.context_probe_acc} & \respm{\Edb}{context.plausibility_probe_acc} & \respm{\Edb}{semantic.stsb_spearman} & \respm{\Edb}{retrieval.mrr} & \respm{\Edb}{stress_words.words_mrr} & \respm{\Edb}{stress_words.words_equivalence_auc} \\
+Exp5 direct + parser & \respm{\Ee}{context.dimension_discrimination_acc} & \respm{\Ee}{context.context_probe_acc} & \respm{\Ee}{context.plausibility_probe_acc} & \respm{\Ee}{semantic.stsb_spearman} & \respm{\Ee}{retrieval.mrr} & \respm{\Ee}{stress_words.words_mrr} & \respm{\Ee}{stress_words.words_equivalence_auc} \\
+Exp6 learned projection & \respm{\Ef}{context.dimension_discrimination_acc} & \respm{\Ef}{context.context_probe_acc} & \respm{\Ef}{context.plausibility_probe_acc} & \respm{\Ef}{semantic.stsb_spearman} & \respm{\Ef}{retrieval.mrr} & \respm{\Ef}{stress_words.words_mrr} & \respm{\Ef}{stress_words.words_equivalence_auc} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\textbf{Equivalence, order and distance (H3, H4).} Table~\ref{tab:num} is the main comparison and Fig.~\ref{fig:cos}
+shows the similarity distributions. \interp{H3: Exp3 vs Exp1 per column. H4: Exp4b vs Exp3b and Exp4a vs Exp3b. Does
+order move in the probe but not in betweenness, as \S\ref{sec:form} predicts?}
+
+\begin{figure}[t]
+\centering\figorbox{01_cosine_baseline_vs_finetuned.png}{\columnwidth}
+\caption{Cosine similarity by numerical relation: original, directly fine-tuned and teacher-distilled encoders.}
+\label{fig:cos}
+\end{figure}
+
+\textbf{Context, semantics and attribution (H5, H6).} Table~\ref{tab:ctxwords} pairs context and STS-B metrics with
+the parser-free slice. \interp{STS-B change (H6). Digit-to-words MRR drop of Exp2/Exp5 vs Exp3/Exp6: a large hybrid
+drop with stable Exp3/Exp6 is evidence of learned numeracy; equal drops mean parser-driven gains (H5).}
+
+\textbf{Retrieval and geometry.} Fig.~\ref{fig:retr} shows equivalence retrieval and the
+embedding geometry, and Fig.~\ref{fig:dist} plots embedding against numerical distance. \interp{does magnitude become
+a visible direction in the PCA after fine-tuning?}
+
+\textbf{Ablation.} Table~\ref{tab:abl} adds the objectives cumulatively (seed 42). \interp{largest step; steps smaller
+than the Exp3 seed standard deviation are inconclusive.}
+
+\begin{table}[t]
+\centering\footnotesize\setlength{\tabcolsep}{3.5pt}
+\caption{Cumulative ablation (seed 42; E = Exp3).}
+\label{tab:abl}
+\begin{tabular}{@{}lcccccc@{}}
+\toprule
+Variant & AUC & MRR & $\rho_{\log}$ & Order & Dim. & STS-B \\
+\midrule
+A semantic only & \res{abl_A_semantic_only}{equivalence.equivalence_auc_hard} & \res{abl_A_semantic_only}{retrieval.mrr} & \res{abl_A_semantic_only}{distance.same_template_log_distance_spearman} & \res{abl_A_semantic_only}{ordering.probe_pairwise_order_acc} & \res{abl_A_semantic_only}{context.dimension_discrimination_acc} & \res{abl_A_semantic_only}{semantic.stsb_spearman} \\
+B + equivalence & \res{abl_B_+equivalence}{equivalence.equivalence_auc_hard} & \res{abl_B_+equivalence}{retrieval.mrr} & \res{abl_B_+equivalence}{distance.same_template_log_distance_spearman} & \res{abl_B_+equivalence}{ordering.probe_pairwise_order_acc} & \res{abl_B_+equivalence}{context.dimension_discrimination_acc} & \res{abl_B_+equivalence}{semantic.stsb_spearman} \\
+C + ordering & \res{abl_C_+ordering}{equivalence.equivalence_auc_hard} & \res{abl_C_+ordering}{retrieval.mrr} & \res{abl_C_+ordering}{distance.same_template_log_distance_spearman} & \res{abl_C_+ordering}{ordering.probe_pairwise_order_acc} & \res{abl_C_+ordering}{context.dimension_discrimination_acc} & \res{abl_C_+ordering}{semantic.stsb_spearman} \\
+D + distance & \res{abl_D_+distance}{equivalence.equivalence_auc_hard} & \res{abl_D_+distance}{retrieval.mrr} & \res{abl_D_+distance}{distance.same_template_log_distance_spearman} & \res{abl_D_+distance}{ordering.probe_pairwise_order_acc} & \res{abl_D_+distance}{context.dimension_discrimination_acc} & \res{abl_D_+distance}{semantic.stsb_spearman} \\
+E + context & \res{\Ec}{equivalence.equivalence_auc_hard} & \res{\Ec}{retrieval.mrr} & \res{\Ec}{distance.same_template_log_distance_spearman} & \res{\Ec}{ordering.probe_pairwise_order_acc} & \res{\Ec}{context.dimension_discrimination_acc} & \res{\Ec}{semantic.stsb_spearman} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\begin{minipage}{0.49\textwidth}\centering\figorbox{03_equivalence_retrieval.png}{\linewidth}\end{minipage}\hfill
+\begin{minipage}{0.49\textwidth}\centering\figorbox{06_pca_embedding_space.png}{\linewidth}\end{minipage}
+\caption{Left: equivalence retrieval (R@$k$, MRR, MRR on the words slice). Right: PCA of mass statements coloured by
+$\log_{10}$ magnitude, original vs fine-tuned encoder.}
+\label{fig:retr}
+\end{figure*}
+
+\begin{figure}[t]
+\centering\figorbox{02_numerical_vs_embedding_distance.png}{\columnwidth}
+\caption{Numerical log distance vs embedding distance (same-template pairs).}
+\label{fig:dist}
+\end{figure}
+
+% =============================================================================================
+\section{Discussion}
+\label{sec:disc}
+% =============================================================================================
+\textbf{Higher cosine is not better numeracy.} A general encoder can give high similarity to every pair of
+template-sharing sentences, including pairs four orders of magnitude apart or in different dimensions. Reporting mean
+cosine on positives alone mistakes this compression for understanding. The informative quantities are discriminative
+(AUC against hard negatives), graded (rank correlation with numerical distance) and comparative (equivalent vs
+cross-dimension partners of one anchor). Fine-tuning may \emph{lower} all absolute cosines while improving each of
+these---the signature of a space that has begun to separate numbers, not of degradation.
+
+\textbf{The verification paradox.} Verification is necessary: an unverified small teacher injects noise into exactly
+the relations it should teach. But it also bounds the teacher's value on determinable relations, where filtered labels
+coincide with a few lines of Python. What remains is a \emph{selection effect} (the pairs the teacher gets right may be
+easier) and \emph{confidence weights}. Without the budget-matched Exp3b, any Exp4b gain over Exp1 would be wrongly
+credited to distillation. If H4 holds, the honest conclusion is that \emph{LLM teachers are the wrong source of
+supervision for relations a parser can compute}. Their value lies in signals Python cannot verify: plausibility (is
+37\,\textdegree C a normal body temperature?), implicit units (``a six-footer''), approximations (``about a dozen''),
+ranges and free phrasing.
+
+\textbf{Learned or parsed?} A parser hybrid will look near-perfect whenever numbers appear as digits with canonical
+units---a property of the benchmark, not evidence of learning. The words slice breaks this. If the hybrids' advantage
+vanishes there while a fine-tuned or projected embedding keeps part of its gain, the embedding has internalised some
+numeracy. If everything collapses to baseline, the student learned digit-string regularities rather than quantities,
+pointing to number-aware tokenisation~\cite{thawani2021survey,sundararaman2020dice} as the bottleneck.
+
+\textbf{One space or two; log or absolute distance?} The tensions of \S\ref{sec:form} argue for decoupling: a
+numerical subspace (Exp6) can collapse equivalent quantities while the semantic space keeps contexts apart, and order
+may ultimately need an asymmetric score~\cite{vendrov2016order}. Log distance suits magnitude reasoning; relative
+absolute distance suits tolerance-based matching in entity resolution. The choice should follow the downstream
+decision, and benchmarks should report both.
+
+\textbf{Semantic cost.} Self-distillation on general text~\cite{reimers2020multilingual} is a cheap guard
+against forgetting, but the numerical objectives deliberately reshape similarities between near-identical sentences,
+so some movement on STS-B is expected. The relevant question is the size of the trade-off, not whether one exists.
+
+\section{Limitations and Threats to Validity}
+\textbf{Data.} The data are synthetic and template-based; real text has implicit units, ranges and several
+quantities per sentence. Outside category G, values are deliberately decoupled from plausibility. \textbf{External validity.} Templates are shared across splits by design, except for seven held-out ones, and the
+words slice tests format shift rather than new vocabulary. Conclusions about a 1.5B teacher need not transfer to larger
+models. \textbf{Internal validity.} Hyperparameters ($\lambda$, margins, $\sigma$) were fixed a priori rather than tuned
+per configuration, so a different weighting could change the ablation ranking. \textbf{Construct validity.} Probes
+measure linear decodability, not downstream use~\cite{hewitt2019control}. \textbf{Statistics.} Three seeds for the main
+configurations and one for the ablation; bootstrap intervals cover test-item sampling, not training variance.
+
+% =============================================================================================
+\section{Conclusion}
+% =============================================================================================
+Transferring numerical reasoning into sentence embeddings is attractive and easy to evaluate badly. We argued that
+claims about it require discriminative rather than absolute similarity, a parser-free test slice and a budget-matched
+no-teacher baseline, and we provided a benchmark and protocol implementing them with pre-declared hypotheses.
+\interp{summary of which hypotheses were supported.} Promising directions are LLM teachers for \emph{non-determinable}
+numerical judgements, asymmetric heads for order, number-aware tokenisation, and evaluation on real numeric retrieval
+and entity-resolution tasks. Code and configuration:
+\url{https://github.com/TariqMahmood93/Numerical_Intelligence_Transfor}.
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+
+\appendix[Teacher Prompts]
+System: \emph{``You are a careful assistant for physical quantities. Convert units exactly before comparing.
+Temperatures must be compared on an absolute scale. Answer with only the requested option.''} User prompts present
+``Statement A: \ldots\ Statement B: \ldots'' and ask:
+\textbf{dimension}---``Do A and B measure the same physical dimension? Answer Yes or No.'';
+\textbf{equivalence}---``After converting to a common unit, do A and B state exactly the same quantity? Answer Yes or
+No.'';
+\textbf{order}---``After converting to a common unit, which quantity is larger? Answer A, B, or Equal.'';
+\textbf{ratio}---``Convert both quantities to the same unit (use kelvin for temperatures) and compute the ratio A
+divided by B. Reply with only the number.'';
+\textbf{plausibility}---``Is the numerical value physically plausible given the description in the statement? Answer
+Yes or No.''
+
+\end{document}
