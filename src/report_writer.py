@@ -15,17 +15,17 @@ COMPOSITE = ["equivalence.equivalence_auc_hard", "retrieval.mrr", "distance.same
              "ordering.probe_pairwise_order_acc", "ordering.triplet_betweenness_acc",
              "context.dimension_discrimination_acc"]
 
-LABELS = {
-    "exp1_original_minilm": "Exp1 Original MiniLM",
-    "exp2_parser_plus_original": "Exp2 Parser + original embeddings",
-    "ref_parser_only": "Ref. Parser only",
-    "exp3_math_full": "Exp3 Fine-tuned, direct math supervision (full)",
-    "exp3b_math_budget": "Exp3b Fine-tuned, math labels on teacher budget (no-teacher ablation)",
-    "exp4a_teacher_raw": "Exp4a Fine-tuned, raw teacher labels",
-    "exp4b_teacher_verified": "Exp4b Fine-tuned, teacher labels verified vs ground truth",
-    "exp5_hybrid_finetuned_plus_parser": "Exp5 Hybrid: fine-tuned + parser",
-    "exp6_learned_projection": "Exp6 Learned numerical projection (no parser)",
-    "exp3_math_full_absdist": "Exp3-abs Distance loss on absolute (relative) distance",
+LABELS = {  # display names, matching the paper
+    "exp1_original_minilm": "Base (original MiniLM)",
+    "exp2_parser_plus_original": "Base+Parse (original + parser)",
+    "ref_parser_only": "ParseOnly (parser alone)",
+    "exp3_math_full": "NumBridge-Exact (exact supervision, all pairs)",
+    "exp3b_math_budget": "NumBridge-Matched (exact labels on the reasoner's pairs; reasoner-free control)",
+    "exp4a_teacher_raw": "NumBridge-Raw (raw LLM-reasoner labels)",
+    "exp4b_teacher_verified": "NumBridge-Verified (verified LLM-reasoner labels)",
+    "exp5_hybrid_finetuned_plus_parser": "NumBridge-Exact+Parse (Exact + parser)",
+    "exp6_learned_projection": "NumBridge-Dual (learned numerical subspace, no parser)",
+    "exp3_math_full_absdist": "NumBridge-Abs (absolute-distance target)",
 }
 
 

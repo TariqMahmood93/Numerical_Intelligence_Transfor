@@ -200,7 +200,7 @@ separate numerical subspace and a parser-hybrid similarity.
 \label{sec:method}
 % =============================================================================================
 \textbf{Verified reasoner.} Qwen2.5-1.5B-Instruct~\cite{qwen2025qwen25} answers, per statement pair: same dimension
-(Yes/No), equivalent after conversion (Yes/No), which is larger (A/B/Equal) and the ratio $A/B$ (a number); and, per
+(Yes/No), equivalent after conversion (Yes/No), which is larger (A/B/Equal) and, for a random half of the same-dimension pairs, the ratio $A/B$ (a number); and, per
 statement, whether the value is plausible in context (Yes/No). Categorical answers are read from the next-token
 distribution over option tokens in one forward pass, giving a label and a confidence $p$; ratios use greedy decoding.
 Every determinable answer is checked against Python ground truth; LLM output is never ground truth.
@@ -248,8 +248,8 @@ falling back to $s$ when parsing fails.
 \end{itemize}
 $\alpha$ is tuned on validation in both cases.
 
-\textbf{Training.} AdamW (lr $2{\times}10^{-5}$, weight decay 0.01, 10\,\% warm-up), $4\times300$ steps, batch 32 per
-objective, $\lambda=(1,0.5,1,0.5,1)$, $\tau=0.05$, $m_r=0.1$, $m_t=0.05$, $m_k\in\{0.3,0.85,0.7\}$,
+\textbf{Training.} AdamW (lr $2{\times}10^{-5}$, weight decay 0.01, 10\,\% warm-up), $4\times300$ steps, batch 32 pairs per
+objective (16 triplets), $\lambda=(1,0.5,1,0.5,1)$, $\tau=0.05$, $m_r=0.1$, $m_t=0.05$, $m_k\in\{0.3,0.85,0.7\}$,
 $(c_{\min},c_{\max})=(0.2,0.9)$, $\sigma_{\log}=1$, $\sigma_{\mathrm{abs}}=0.25$; checkpoint selection by the unweighted
 validation loss, identical across runs; seeds 42--44; reasoner budget 4{,}000 training pairs.
 
@@ -291,7 +291,7 @@ G & Plausible vs contradictory (\textit{0.006 mL syrup dose}) & 601 \\
 \textbf{Configurations} are listed in Table~\ref{tab:configs}. Three are controls for the confounds:
 \vMatched trains on \emph{exactly} the reasoner's pairs with ground-truth labels, so \vVerified$-$\vMatched isolates what
 the reasoner adds beyond pair selection and confidence weights (C3); \vDual learns a numerical subspace without
-any parser; and the \textbf{words slice} disables the parser at test time (C2).
+any parser; and the \textbf{words slice} disables the parser at test time (C2). To keep this comparison fair, \vMatched mirrors the reasoner's supervision exactly: it receives distance targets only on the pairs for which the reasoner was asked a ratio (half of the same-dimension pairs), and neither it nor the reasoner-based models use the triplet betweenness term, which only \vExact receives. The same-/different-context labels used to form positives come from the benchmark metadata for every model, not from the reasoner.
 
 \begin{table}[t]
 \centering\footnotesize
@@ -308,7 +308,7 @@ any parser; and the \textbf{words slice} disables the parser at test time (C2).
 \vVerified & Same pairs, reasoner labels kept only where verified. \\
 \vExactParse & \vExact embeddings + parser hybrid. \\
 \vDual & Learned numerical projection head, no parser. \\
-\vAbs & \vExact with the absolute-distance target. \\
+\vAbs & \vExact with the absolute-distance target (seed 42 only). \\
 Ablation & $\Lq_{\mathrm{sem}}$ only, then $+\Lq_{\mathrm{eq}}$, $+\Lq_{\mathrm{ord}}$, $+\Lq_{\mathrm{dist}}$, $+\Lq_{\mathrm{ctx}}$ (= \vExact). \\
 \bottomrule
 \end{tabular}
@@ -316,7 +316,7 @@ Ablation & $\Lq_{\mathrm{sem}}$ only, then $+\Lq_{\mathrm{eq}}$, $+\Lq_{\mathrm{
 
 \textbf{Metrics.} \emph{Equivalence}: ROC-AUC / balanced accuracy of equivalent vs \emph{hard} negatives (same
 dimension, $\le10\times$ apart; C1), with cross-unit and precision subsets. \emph{Order}: per-dimension ridge probe to
-$\log_{10}v$ (pairwise accuracy) and cosine betweenness. \emph{Distance}: Spearman $\rho$ of $1-s$ vs $\Delta$ on
+$\log_{10}v$ (pairwise accuracy) and betweenness under each model's similarity $s$. \emph{Distance}: Spearman $\rho$ of $1-s$ vs $\Delta$ on
 same-template pairs. \emph{Retrieval}: MRR for same-group retrieval among all test statements. \emph{Context}:
 dimension discrimination $\Pr[s(a,\text{equiv.})>s(a,\text{cross-dim.})]$ and linear context and plausibility probes.
 \emph{Semantics}: STS-B~\cite{cer2017sts} Spearman. Thresholds and $\alpha$ are tuned on validation.
@@ -353,7 +353,7 @@ Hardware: \envv{hardware}; reasoner \teach{teacher_model}; means $\pm$ seed stan
 Same dimension & \teach{same_dimension_acc} & Ordering & \teach{ordering_acc} \\
 Equiv.\ (balanced) & \teach{equivalence_balanced_acc} & Ratio within 1\,\% & \teach{ratio_acc_within_1pct} \\
 Equiv.\ AUC (soft) & \teach{equivalence_auc} & Plausibility (bal.) & \teach{compatibility_balanced_acc} \\
-Cross-unit equiv. & \teach{unit_conversion_acc_cross_unit_equiv} & Fully verified & \teach{fully_verified_fraction} \\
+Cross-unit equiv.\ (recall) & \teach{unit_conversion_acc_cross_unit_equiv} & Fully verified & \teach{fully_verified_fraction} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -382,7 +382,7 @@ Plausible vs contradictory & \res{\Ea}{cosn.plausibility} & \res{\Ea}{cos.plausi
 \begin{table*}[t]
 \centering\footnotesize
 \caption{Numerical metrics on digit-form test text. AUC: equivalent vs hard negatives; Order: probe pairwise
-accuracy; Betw.: cosine betweenness; $\rho_{\log}$: Spearman of $1-s$ vs $|\Delta\log_{10}|$ (same template).}
+accuracy; Betw.: betweenness under the model's similarity; $\rho_{\log}$: Spearman of $1-s$ vs $|\Delta\log_{10}|$ (same template).}
 \label{tab:num}
 \setlength{\tabcolsep}{4pt}\begin{tabular}{@{}lccccccc@{}}
 \toprule

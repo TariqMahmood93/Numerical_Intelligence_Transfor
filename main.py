@@ -259,8 +259,11 @@ def main():
     for s in cfg["seeds"]:
         runs.append(("exp3_math_full", s, sup_full, L, 0, cfg))
         if t_pairs is not None:
-            budget_pairs = tr_pairs.merge(t_pairs[["a_id", "b_id"]], on=["a_id", "b_id"])
-            runs.append(("exp3b_math_budget", s, math_supervision(budget_pairs, None, train, cfg), L, 0, cfg))
+            # NumBridge-Matched: ground-truth labels on exactly the reasoner's pairs, and distance targets only
+            # where the reasoner was asked for a ratio. No triplets, as for the reasoner-based runs.
+            budget_pairs = tr_pairs.merge(t_pairs[["a_id", "b_id", "ratio_asked"]], on=["a_id", "b_id"])
+            runs.append(("exp3b_math_budget", s, math_supervision(budget_pairs, None, train, cfg,
+                                                                  dist_mask=budget_pairs.ratio_asked), L, 0, cfg))
             runs.append(("exp4a_teacher_raw", s, teacher_supervision(t_pairs, t_g, cfg, verified=False), L, 0, cfg))
             runs.append(("exp4b_teacher_verified", s, teacher_supervision(t_pairs, t_g, cfg, verified=True), L, 0, cfg))
         if cfg["experiments"]["run_projection_head"]:

@@ -47,13 +47,19 @@ def dist_target(delta: np.ndarray, cfg: dict) -> np.ndarray:
     return tcfg["c_min"] + (tcfg["c_max"] - tcfg["c_min"]) * np.exp(-np.asarray(delta) / sigma)
 
 
-def math_supervision(pairs: pd.DataFrame, triplets: pd.DataFrame | None, stmts: pd.DataFrame, cfg: dict) -> dict:
-    """Direct mathematical (ground-truth) supervision."""
+def math_supervision(pairs: pd.DataFrame, triplets: pd.DataFrame | None, stmts: pd.DataFrame, cfg: dict,
+                     dist_mask: pd.Series | None = None) -> dict:
+    """Direct mathematical (ground-truth) supervision.
+    `dist_mask` restricts the distance targets to a subset of pairs. NumBridge-Matched passes the pairs on
+    which the reasoner was asked for a ratio, so both receive distance supervision on the same pairs."""
     m = cfg["training"]["margins"]
     mode = cfg["training"]["distance"]["mode"]
     sid = stmts.set_index("id").sentence
     eqp = pairs[pairs.equivalent & pairs.same_context]
-    dp = pairs[pairs.same_dimension & ~pairs.equivalent]
+    dsel = pairs.same_dimension & ~pairs.equivalent
+    if dist_mask is not None:
+        dsel = dsel & dist_mask.astype(bool)
+    dp = pairs[dsel]
     delta = dp.log_distance if mode == "log" else dp.rel_abs_distance
     op = pairs[pairs.same_dimension & (pairs.order != 0)]
     lo = np.where(op.order == -1, op.a_sentence, op.b_sentence)
