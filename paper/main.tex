@@ -24,7 +24,9 @@
 \hypersetup{colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black}
 
 % ----------------------------------------------------------------- result macros
-\InputIfFileExists{numbers.tex}{}{}
+% Real results (numbers.tex) take precedence; illustrative dummies are used only if it is absent.
+\newcommand{\dummyval}[1]{\textcolor{blue!70!black}{#1}}% set to {#1} to print dummies in black
+\InputIfFileExists{numbers.tex}{}{\InputIfFileExists{dummy_numbers.tex}{}{}}
 \newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
 \makeatletter
 \newcommand{\res}[2]{\@ifundefined{res@#1@#2}{\tbd}{\@nameuse{res@#1@#2}}}
@@ -62,7 +64,13 @@ University of Calabria, Rende (CS), Italy}
 \begin{document}
 \maketitle
 
-\ifdefined\ResultsAreMock
+\ifdefined\ResultsAreDummy
+\begin{tcolorbox}[colback=orange!10,colframe=orange!80!black,title=Illustrative dummy values]
+All experimental values in this build (shown in \dummyval{blue}) are \textbf{placeholders for layout only, not
+experimental results}. They are replaced automatically by the real values in \texttt{numbers.tex}. Remove this
+build from circulation before submission.
+\end{tcolorbox}
+\else\ifdefined\ResultsAreMock
 \begin{tcolorbox}[colback=red!8,colframe=red!70!black,title=Pipeline-check numbers]
 The values in this build come from a pipeline validation run (randomly initialised tiny encoder, mock teacher).
 They verify that the code runs end to end and \textbf{are not findings} about all-MiniLM-L6-v2 or Qwen2.5.
@@ -73,7 +81,7 @@ The method, benchmark and experimental design are final. Experimental values mar
 \emph{[Figure pending]} are filled in automatically from \texttt{results/metrics.json} once the experiments
 finish. Dataset statistics are final: the generator is deterministic.
 \end{tcolorbox}
-\fi\fi
+\fi\fi\fi
 
 \begin{abstract}
 Dense sentence encoders are the retrieval backbone of retrieval-augmented generation, semantic search and entity

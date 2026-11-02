@@ -15,7 +15,9 @@
 \usepackage[hidelinks]{hyperref}
 
 % ----------------------------------------------------------------- result macros
-\InputIfFileExists{numbers.tex}{}{}
+% Real results (numbers.tex) take precedence; illustrative dummies are used only if it is absent.
+\newcommand{\dummyval}[1]{\textcolor{blue!70!black}{#1}}% set to {#1} to print dummies in black
+\InputIfFileExists{numbers.tex}{}{\InputIfFileExists{dummy_numbers.tex}{}{}}
 \newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
 \makeatletter
 \newcommand{\res}[2]{\@ifundefined{res@#1@#2}{\tbd}{\@nameuse{res@#1@#2}}}
@@ -69,6 +71,11 @@ with affine temperature handling. We pre-declare hypotheses and decision rules a
 sentence embeddings, numeracy, knowledge distillation, large language models, semantic retrieval
 \end{IEEEkeywords}
 
+\ifdefined\ResultsAreDummy
+\noindent\fcolorbox{orange!80!black}{orange!10}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{\footnotesize\textbf{Illustrative dummy values:}
+all experimental numbers (in \dummyval{blue}) are layout placeholders, \emph{not results}; they are replaced
+automatically by \texttt{numbers.tex}.}}
+\fi
 \ifdefined\ResultsAreMock
 \noindent\fcolorbox{red}{red!8}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{\footnotesize\textbf{Pipeline-check build:}
 numbers come from a random tiny encoder and a mock teacher; they are not findings.}}
