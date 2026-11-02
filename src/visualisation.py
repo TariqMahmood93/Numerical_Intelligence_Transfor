@@ -17,7 +17,7 @@ PAIR_ORDER = ["equivalent", "equivalent_diff_context", "close", "mid", "distant"
 
 def _save(fig, path):
     fig.tight_layout()
-    fig.savefig(path, dpi=160)
+    fig.savefig(path, dpi=160, bbox_inches="tight")
     plt.close(fig)
     return path
 

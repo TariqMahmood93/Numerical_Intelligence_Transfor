@@ -15,3 +15,14 @@ logs/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
+
+# LaTeX build files
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.fdb_latexmk
+paper/*.fls
+paper/*.synctex.gz
+paper/main.pdf

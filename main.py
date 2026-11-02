@@ -388,6 +388,12 @@ def main():
     write_methodology(cfg, env, audit, os.path.join(P["reports"], "methodology.md"))
     write_report(metrics, agg.copy(), abl, teacher_acc if "error" not in teacher_acc else {}, cfg, env, audit,
                  os.path.join(P["reports"], "experimental_report.md"), mock=args.smoke)
+    try:  # LaTeX macros for paper/main.tex (paper/numbers.tex)
+        import subprocess
+        subprocess.run([sys.executable, os.path.join(ROOT, "src", "export_latex.py"), "--root", out,
+                        "--out", os.path.join(out, "paper", "numbers.tex")], check=True)  # smoke runs never touch ROOT/paper
+    except Exception as e:
+        log(f"LaTeX export failed: {e}")
     log(f"Done in {env['total_seconds']} s. Report: {os.path.join(P['reports'], 'experimental_report.md')}")
 
 
