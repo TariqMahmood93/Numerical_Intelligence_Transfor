@@ -1,0 +1,14 @@
+torch>=2.2
+sentence-transformers>=3.0
+transformers>=4.44
+accelerate>=0.30
+datasets>=2.19
+tokenizers>=0.19
+numpy>=1.26
+pandas>=2.1
+scikit-learn>=1.4
+scipy>=1.11
+matplotlib>=3.8
+seaborn>=0.13
+pyyaml>=6.0
+# Tested in development with: torch 2.15.0, sentence-transformers 6.2.0, transformers 5.22.1, Python 3.13

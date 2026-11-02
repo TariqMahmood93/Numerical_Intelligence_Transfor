@@ -1,0 +1,58 @@
+# Numerical Intelligence Transfer -- experiment configuration
+seed: 42
+seeds: [42, 43, 44]          # seeds for the main trained configurations (variance across runs)
+device: auto                 # auto | cuda | cpu
+
+models:
+  student: sentence-transformers/all-MiniLM-L6-v2
+
+teacher:
+  model: auto                # auto -> chosen from hardware (below); or an explicit HF id
+  preferred_model: Qwen/Qwen2.5-1.5B-Instruct   # GPU with >= 8 GB
+  fallback_model: Qwen/Qwen2.5-0.5B-Instruct    # small GPU or CPU
+  dtype: auto
+  batch_size: 32
+  max_pairs: 4000            # teacher-labelled training-pair budget (stratified by pair type)
+  cpu_max_pairs: 600         # budget when only a CPU is available
+  ratio_fraction: 0.5        # fraction of same-dimension pairs also asked for a numerical ratio
+  max_new_tokens: 12
+
+dataset:
+  scale: 1.0
+  category_sizes: {A: 900, B: 1200, C: 600, D: 600, E: 500, F: 600, G: 600}   # ~5,000 statements
+  pairs: {k_close: 2, k_mid: 1, k_distant: 2, k_cross: 1, max_eq_per_group: 10}
+  triplets_random: 3000
+
+semantic_corpus:
+  stsb_dataset: sentence-transformers/stsb
+  max_general_sentences: 6000   # unlabeled STS-B train sentences for L_sem (labels never used)
+
+training:
+  epochs: 4
+  steps_per_epoch: 300
+  batch_size: 32
+  lr: 2.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_grad_norm: 1.0
+  max_seq_length: 64
+  val_batches: 20
+  tau: 0.05                  # InfoNCE temperature (L_eq)
+  proj_dim: 128              # numerical projection head size (Exp. 6)
+  lambdas: {eq: 1.0, ord: 0.5, dist: 1.0, ctx: 0.5, sem: 1.0}
+  margins: {rank: 0.1, triplet: 0.05, cross: 0.3, context: 0.85, plausibility: 0.7}
+  distance:
+    mode: log                # log | abs  (both are run; see experiments)
+    sigma_log: 1.0           # one decade -> exp(-1)
+    sigma_abs: 0.25
+    c_min: 0.2
+    c_max: 0.9               # non-equivalent pairs never targeted above 0.9 (gap to equivalence)
+
+evaluation:
+  parser_sigma: 1.0
+  bootstrap: 500
+
+experiments:
+  run_ablation: true
+  run_distance_mode_abs: true
+  run_projection_head: true
