@@ -401,9 +401,13 @@ same-dimension question for only 3\,\% of pairs, although 84\,\% share a dimensi
 places 89\,\% of its order probability on ``Equal'' (accuracy \teach{ordering_acc}, close to the share of equal pairs).
 Only \teach{fully_verified_fraction} of the pairs survive verification. H1 is therefore only \emph{partly} supported: the
 reasoner is weak on conversion and ratios, as predicted, but it is \emph{not} reliable on dimension identification.
-\textbf{Caveat (preliminary):} the same degenerate pattern would also arise if the model's preferred first token were
-not one of the option tokens, which would make the option probabilities uninformative. We are checking this with a
-token-level and free-text diagnostic, and with a reworded prompt, before treating these figures as final.
+\textbf{This is a property of the model, not of the scoring.} A diagnostic confirms that 95--100\,\% of the
+next-token probability falls on the option tokens, that free-text answers agree with the scored ones (``No'' for
+10\,kg vs 10{,}000\,g; ``Equal'' for 2\,m vs 300\,cm), and that batching changes scores only at the third decimal.
+Rewording the questions on 150 training pairs shifts \emph{which} option the model prefers (order answers move from
+``Equal'' to mostly ``B'') but not its accuracy: 0.18 to 0.22 on dimension (majority baseline 0.86) and 0.31 to 0.33
+on order (majority 0.39). A 1.5B reasoner therefore supplies little usable supervision on determinable relations,
+which bears directly on H4.
 
 \subsection{What the original encoder sees (H2)}
 \begin{table}[h]
