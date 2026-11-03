@@ -18,7 +18,7 @@
 % ----------------------------------------------------------------- result macros
 % Real results (numbers.tex) take precedence; illustrative dummies are used only if it is absent.
 \newcommand{\dummyval}[1]{\textcolor{blue!70!black}{#1}}% set to {#1} to print dummies in black
-\InputIfFileExists{numbers.tex}{}{\InputIfFileExists{dummy_numbers.tex}{}{}}
+\InputIfFileExists{numbers.tex}{}{\InputIfFileExists{dummy_numbers.tex}{}{}\InputIfFileExists{partial_real_numbers.tex}{}{}}% real values available so far override the dummies
 \newcommand{\tbd}{\textcolor{red}{\textbf{[TBD]}}}
 \makeatletter
 \newcommand{\res}[2]{\@ifundefined{res@#1@#2}{\tbd}{\@nameuse{res@#1@#2}}}
@@ -88,8 +88,8 @@ sentence embeddings, numeracy, knowledge distillation, large language models, se
 
 \ifdefined\ResultsAreDummy
 \noindent\fcolorbox{orange!80!black}{orange!10}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{\footnotesize\textbf{Illustrative dummy values:}
-all experimental numbers (in \dummyval{blue}) are layout placeholders, \emph{not results}; they are replaced
-automatically by \texttt{numbers.tex}.}}
+numbers in \dummyval{blue} are layout placeholders, \emph{not results}. Numbers in black (reasoner accuracy,
+hardware) are real, from the run in progress. All are replaced automatically by \texttt{numbers.tex}.}}
 \fi
 \ifdefined\ResultsAreMock
 \noindent\fcolorbox{red}{red!8}{\parbox{\dimexpr\columnwidth-2\fboxsep-2\fboxrule}{\footnotesize\textbf{Pipeline-check build:}
@@ -342,7 +342,18 @@ verification paradox; raw labels (\vRaw) do worse.
 Hardware: \envv{hardware}; reasoner \teach{teacher_model}; means $\pm$ seed standard deviation where available.
 
 \textbf{Reasoner reliability (H1).} Table~\ref{tab:reasoner} reports the reasoner against Python ground truth.
-\interp{which relations are reliable; H1 verdict.}
+The reasoner is far from reliable. Its equivalence judgements carry some signal (soft AUC \teach{equivalence_auc}),
+but raw accuracy (\teach{equivalence_acc}) barely exceeds the majority baseline (\teach{majority_baseline_equivalence}) and
+balanced accuracy is only \teach{equivalence_balanced_acc}. It recognises only \teach{unit_conversion_acc_cross_unit_equiv} of
+cross-unit equivalences and places only \teach{ratio_acc_within_1pct} of ratios within 1\,\%, although every ratio answer
+parses as a number. Its dimension and order answers collapse onto a single option: it answers ``Yes'' to the
+same-dimension question for only 3\,\% of pairs, although 84\,\% share a dimension (accuracy \teach{same_dimension_acc}), and it
+places 89\,\% of its order probability on ``Equal'' (accuracy \teach{ordering_acc}, close to the share of equal pairs).
+Only \teach{fully_verified_fraction} of the pairs survive verification. H1 is therefore only \emph{partly} supported: the
+reasoner is weak on conversion and ratios, as predicted, but it is \emph{not} reliable on dimension identification.
+\textbf{Caveat (preliminary):} the same degenerate pattern would also arise if the model's preferred first token were
+not one of the option tokens, which would make the option probabilities uninformative. We are checking this with a
+token-level and free-text diagnostic, and with a reworded prompt, before treating these figures as final.
 
 \begin{table}[t]
 \centering\footnotesize
