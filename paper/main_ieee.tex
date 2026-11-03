@@ -79,7 +79,8 @@ distillation protocol with a reasoner (Qwen2.5) verified against deterministic g
 budget-matched reasoner-free control that isolates the reasoner's contribution; (iii) attribution controls that separate
 embedding-internal learning from parser-driven gains, namely a parser-free numbers-in-words slice and a learned
 numerical projection head; and (iv) a leakage-controlled benchmark of 5{,}010 statements over six physical dimensions,
-with affine temperature handling. We pre-declare hypotheses and decision rules and report preliminary results.
+with affine temperature handling. We pre-declare hypotheses and decision rules and report preliminary results. Direct supervision raises hard-negative equivalence AUC from \res{\Ea}{equivalence.equivalence_auc_hard} to \res{\Ec}{equivalence.equivalence_auc_hard} and the rank correlation with log distance from \res{\Ea}{distance.same_template_log_distance_spearman} to \res{\Ec}{distance.same_template_log_distance_spearman} without harming STS-B; the 1.5B reasoner, however, is unreliable, and distilling
+from it underperforms a reasoner-free control.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -339,7 +340,9 @@ verification paradox; raw labels (\vRaw) do worse.
 \section{Preliminary Results}
 \label{sec:results}
 % =============================================================================================
-Hardware: \envv{hardware}; reasoner \teach{teacher_model}; means $\pm$ seed standard deviation where available.
+Hardware: one NVIDIA H200 MIG slice (1g.18gb, 17.2\,GB) with 4 CPU cores; all 20 training runs and their
+evaluation took \envv{minutes} minutes. Reasoner: \teach{teacher_model}. Means $\pm$ seed standard deviation where
+available.
 
 \textbf{Reasoner reliability (H1).} Table~\ref{tab:reasoner} reports the reasoner against Python ground truth.
 The reasoner is far from reliable. Its equivalence judgements carry some signal (soft AUC \teach{equivalence_auc}),
@@ -374,7 +377,13 @@ Cross-unit equiv.\ (recall) & \teach{unit_conversion_acc_cross_unit_equiv} & Ful
 \end{table}
 
 \textbf{What the original encoder sees (H2).} Table~\ref{tab:cos} gives the mean cosine by pair type.
-\interp{is the \vBase column flat across pair types? If so, C1 holds.}
+The original encoder does \emph{not} treat all pairs alike: same-context equivalent pairs average \res{\Ea}{cos.equivalent}, against \res{\Ea}{cos.close} for close pairs, \res{\Ea}{cos.distant} for distant pairs and \res{\Ea}{cos.cross_dimension} across
+dimensions. Much of this separation is lexical, however: equivalent pairs share a template, while the negatives often
+do not. Within a template the encoder barely grades magnitude ($\rho_{\log}=\res{\Ea}{distance.same_template_log_distance_spearman}$) and its
+betweenness accuracy is only \res{\Ea}{ordering.triplet_betweenness_acc}. H2 is therefore \emph{partly} supported: the encoder fails
+D2 and the geometric form of D3, but not D1 (hard-negative AUC \res{\Ea}{equivalence.equivalence_auc_hard}) or D4 (dimension
+discrimination \res{\Ea}{context.dimension_discrimination_acc}). C1 holds in a weaker form than anticipated: high cosine on equivalent
+pairs reflects shared wording as much as shared quantity.
 
 \begin{table}[t]
 \centering\footnotesize
@@ -439,8 +448,20 @@ Model & Dim.\ discrim. & Context probe & Plausibility probe & STS-B $\rho$ & MRR
 \end{table*}
 
 \textbf{Equivalence, order and distance (H3, H4).} Table~\ref{tab:num} is the main comparison and Fig.~\ref{fig:cos}
-shows the similarity distributions. \interp{H3: \vExact vs \vBase per column. H4: \vVerified vs \vMatched and \vRaw vs \vMatched. Does
-order move in the probe but not in betweenness, as \S\ref{sec:form} predicts?}
+shows the similarity distributions. \textbf{H3 is supported.} Relative to \vBase, \vExact improves every numerical metric beyond the decision
+threshold: hard-negative AUC \res{\Ea}{equivalence.equivalence_auc_hard}$\to$\res{\Ec}{equivalence.equivalence_auc_hard}, unit conversion \res{\Ea}{equivalence.unit_conversion_bal_acc}$\to$\res{\Ec}{equivalence.unit_conversion_bal_acc}, precision \res{\Ea}{equivalence.precision_bal_acc}$\to$\res{\Ec}{equivalence.precision_bal_acc}, order probe \res{\Ea}{ordering.probe_pairwise_order_acc}$\to$\res{\Ec}{ordering.probe_pairwise_order_acc}, $\rho_{\log}$ \res{\Ea}{distance.same_template_log_distance_spearman}$\to$\res{\Ec}{distance.same_template_log_distance_spearman} and MRR \res{\Ea}{retrieval.mrr}$\to$\res{\Ec}{retrieval.mrr}. MRR on the
+held-out templates rises from \res{\Ea}{retrieval_unseen_templates.unseen_mrr} to \res{\Ec}{retrieval_unseen_templates.unseen_mrr}, so the gain transfers to
+unseen phrasings. Dimension discrimination was already at ceiling. Contrary to our expectation that order would remain
+probe-only, it also appears in the geometry: betweenness rises from \res{\Ea}{ordering.triplet_betweenness_acc} to \res{\Ec}{ordering.triplet_betweenness_acc}.
+\textbf{H4 is supported, more strongly than predicted.} The reasoner does not merely fail to add value: \vVerified falls
+below the reasoner-free \vMatched on nearly every numerical metric (AUC \res{\Edb}{equivalence.equivalence_auc_hard} vs \res{\Ecb}{equivalence.equivalence_auc_hard}, $\rho_{\log}$ \res{\Edb}{distance.same_template_log_distance_spearman} vs \res{\Ecb}{distance.same_template_log_distance_spearman}, MRR \res{\Edb}{retrieval.mrr} vs \res{\Ecb}{retrieval.mrr}), and even below \vBase on hard-negative AUC. With only \teach{fully_verified_fraction} of pairs verified, the surviving supervision is small and skewed towards the pairs the reasoner answers
+``No'' or ``Equal'' to. Unverified labels add damage of their own: because the reasoner calls most same-dimension pairs
+``different'', \vRaw pushes them apart, lowering dimension discrimination to \res{\Eda}{context.dimension_discrimination_acc} and
+same-quantity similarity to \res{\Eda}{context.same_quantity_diff_context_mean_sim}. \vMatched, in contrast, recovers most of \vExact's gain from
+the same 4{,}000 pairs ($\rho_{\log}$ \res{\Ecb}{distance.same_template_log_distance_spearman} vs \res{\Ec}{distance.same_template_log_distance_spearman}), so the label source, not
+the budget, separates the reasoner-based models from direct supervision. The absolute-distance target (\vAbs, one
+seed) does not improve the absolute-distance correlation (\res{\Eabs}{distance.same_template_rel_abs_distance_spearman} vs \res{\Ec}{distance.same_template_rel_abs_distance_spearman})
+and lowers betweenness, so the logarithmic target is preferable for both distance notions here.
 
 \begin{figure}[t]
 \centering\figorbox{01_cosine_baseline_vs_finetuned.png}{\columnwidth}
@@ -449,19 +470,34 @@ order move in the probe but not in betweenness, as \S\ref{sec:form} predicts?}
 \end{figure}
 
 \textbf{Context, semantics and attribution (H5, H6).} Table~\ref{tab:ctxwords} pairs context and STS-B metrics with
-the parser-free slice. \interp{STS-B change (H6). Digit-to-words MRR drop of \vParse and \vExactParse vs \vExact and \vDual: a large hybrid
-drop with stable \vExact and \vDual is evidence of learned numeracy; equal drops mean parser-driven gains (H5).}
+the parser-free slice. \textbf{H6 is supported for the single-space models.} STS-B is \res{\Ea}{semantic.stsb_spearman} for \vBase and \res{\Ec}{semantic.stsb_spearman} for \vExact; no single-space model moves by more than 0.003. \vDual is the exception
+(\res{\Ef}{semantic.stsb_spearman}, a drop of 0.020): its validation-tuned mixing weight is $\alpha=0$, so its similarity uses
+only the numerical subspace, which is not trained for general semantics. The context loss keeps the same quantity in
+a different context (\res{\Ec}{context.same_quantity_diff_context_mean_sim}) below same-context equivalence (\res{\Ec}{cos.equivalent}), and the plausibility probe improves from \res{\Ea}{context.plausibility_probe_acc} to \res{\Ec}{context.plausibility_probe_acc}.
+
+\textbf{H5 is supported, but words-slice retrieval proved uninformative.} The parser hybrids are perfect on
+digit text (MRR \res{\Eb}{retrieval.mrr}) but fall back to their embeddings on spelled-out numbers. Retrieval on the
+words slice is at ceiling for every model (MRR \res{\Ea}{stress_words.words_mrr} for \vBase), because each spelled-out
+query's digit source is in the gallery, so it measures the surface match of ``thirty-five'' to ``35'' rather than
+numeracy. The ordering probe is the informative parser-free test: \vExact (\res{\Ec}{ordering.words_probe_pairwise_order_acc}) and \vDual
+(\res{\Ef}{ordering.words_probe_pairwise_order_acc}) improve on \vBase (\res{\Ea}{ordering.words_probe_pairwise_order_acc}), whereas the hybrids collapse (\res{\Eb}{ordering.words_probe_pairwise_order_acc} and \res{\Ee}{ordering.words_probe_pairwise_order_acc}) because their probes rely on parser features that are absent.
+The learned embeddings therefore carry magnitude information that survives a change of number format; the hybrids'
+digit-text advantage does not.
 
 \textbf{Retrieval and geometry.} Fig.~\ref{fig:retr} shows equivalence retrieval and the
-embedding geometry, and Fig.~\ref{fig:dist} plots embedding against numerical distance. \interp{does magnitude become
-a visible direction in the PCA after fine-tuning?}
+embedding geometry, and Fig.~\ref{fig:dist} plots embedding against numerical distance. After fine-tuning, mass statements spread along a clear magnitude gradient in the first two principal
+components, whereas the original encoder clusters them by sentence template. The original encoder's embedding distance
+is nearly flat in $|\Delta\log_{10}|$, while \vExact's grows almost monotonically.
 
-\textbf{Ablation.} Table~\ref{tab:abl} adds the objectives cumulatively (seed 42). \interp{largest step; steps smaller
-than the \vExact seed standard deviation are inconclusive.}
+\textbf{Ablation.} Table~\ref{tab:abl} adds the objectives cumulatively (seed 42). Equivalence and ordering do most of the work. Adding $\Lq_{\mathrm{eq}}$ raises AUC from \res{abl_A_semantic_only}{equivalence.equivalence_auc_hard} to \res{abl_B_+equivalence}{equivalence.equivalence_auc_hard} and $\rho_{\log}$ from \res{abl_A_semantic_only}{distance.same_template_log_distance_spearman} to \res{abl_B_+equivalence}{distance.same_template_log_distance_spearman}, while
+slightly lowering the order probe. Adding $\Lq_{\mathrm{ord}}$ lifts betweenness from \res{abl_B_+equivalence}{ordering.triplet_betweenness_acc} to \res{abl_C_+ordering}{ordering.triplet_betweenness_acc} and MRR from \res{abl_B_+equivalence}{retrieval.mrr} to \res{abl_C_+ordering}{retrieval.mrr}, at a small cost in AUC.
+$\Lq_{\mathrm{dist}}$ adds a further gain in $\rho_{\log}$ (\res{abl_D_+distance}{distance.same_template_log_distance_spearman}) and betweenness (\res{abl_D_+distance}{ordering.triplet_betweenness_acc}),
+and $\Lq_{\mathrm{ctx}}$ changes no numerical metric beyond seed noise, since dimensional separation was already at
+ceiling. With a single seed, steps smaller than about 0.01--0.03 are inconclusive.
 
 \begin{table}[t]
 \centering\footnotesize\setlength{\tabcolsep}{3.5pt}
-\caption{Cumulative ablation (seed 42); the last row is \vExact.}
+\caption{Cumulative ablation (seed 42); the last row is \vExact (mean of three seeds).}
 \label{tab:abl}
 \begin{tabular}{@{}lcccccc@{}}
 \toprule
@@ -499,27 +535,26 @@ $\log_{10}$ magnitude, original vs fine-tuned encoder.}
 template-sharing sentences, including pairs four orders of magnitude apart or in different dimensions. Reporting mean
 cosine on positives alone mistakes this compression for understanding. The informative quantities are discriminative
 (AUC against hard negatives), graded (rank correlation with numerical distance) and comparative (equivalent vs
-cross-dimension partners of one anchor). Fine-tuning may \emph{lower} all absolute cosines while improving each of
-these---the signature of a space that has begun to separate numbers, not of degradation.
+cross-dimension partners of one anchor). Fine-tuning moves absolute cosines in both directions (close pairs rise from \res{\Ea}{cos.close} to \res{\Ec}{cos.close}, cross-dimension pairs fall from \res{\Ea}{cos.cross_dimension} to \res{\Ec}{cos.cross_dimension}); what matters is the ordering of pair types, not their level.
 
 \textbf{The verification paradox.} Verification is necessary: an unverified small reasoner injects noise into exactly
 the relations it should teach. But it also bounds the reasoner's value on determinable relations, where filtered labels
 coincide with a few lines of Python. What remains is a \emph{selection effect} (the pairs the reasoner gets right may be
 easier) and \emph{confidence weights}. Without the budget-matched \vMatched, any \vVerified gain over \vBase would be wrongly
-credited to distillation. If H4 holds, the honest conclusion is that \emph{LLM reasoners are the wrong source of
+credited to distillation. Since H4 holds, the honest conclusion is that \emph{LLM reasoners are the wrong source of
 supervision for relations a parser can compute}. Their value lies in signals Python cannot verify: plausibility (is
 37\,\textdegree C a normal body temperature?), implicit units (``a six-footer''), approximations (``about a dozen''),
 ranges and free phrasing.
 
 \textbf{Learned or parsed?} A parser hybrid will look near-perfect whenever numbers appear as digits with canonical
-units---a property of the benchmark, not evidence of learning. The words slice breaks this. If the hybrids' advantage
+units---a property of the benchmark, not evidence of learning. The ordering probe on the words slice breaks this (retrieval on that slice is at ceiling). If the hybrids' advantage
 vanishes there while a fine-tuned or projected embedding keeps part of its gain, the embedding has internalised some
 numeracy. If everything collapses to baseline, the encoder learned digit-string regularities rather than quantities,
 pointing to number-aware tokenisation~\cite{thawani2021survey,sundararaman2020dice} as the bottleneck.
 
 \textbf{One space or two; log or absolute distance?} The tensions of \S\ref{sec:form} argue for decoupling: a
 numerical subspace (\vDual) can collapse equivalent quantities while the semantic space keeps contexts apart, and order
-may ultimately need an asymmetric score~\cite{vendrov2016order}. Log distance suits magnitude reasoning; relative
+may ultimately need an asymmetric score~\cite{vendrov2016order}. In our results \vDual matches but does not beat the single space, and its validation-tuned similarity discards the semantic channel ($\alpha=0$), costing 0.020 STS-B; choosing $\alpha$ per task, rather than once, is needed. Log distance suits magnitude reasoning; relative
 absolute distance suits tolerance-based matching in entity resolution. The choice should follow the downstream
 decision, and benchmarks should report both.
 
@@ -534,7 +569,7 @@ words slice tests format shift rather than new vocabulary. Conclusions about a 1
 models. \textbf{Internal validity.} Hyperparameters ($\lambda$, margins, $\sigma$) were fixed a priori rather than tuned
 per configuration, so a different weighting could change the ablation ranking. \textbf{Construct validity.} Probes
 measure linear decodability, not downstream use~\cite{hewitt2019control}. \textbf{Statistics.} Three seeds for the main
-configurations and one for the ablation; bootstrap intervals cover test-item sampling, not training variance.
+configurations and one for the ablation; bootstrap intervals cover test-item sampling, not training variance. \textbf{Words slice.} Each spelled-out query's digit source is in the retrieval gallery, so words-slice retrieval is at ceiling; excluding the source would make it a true parser-free retrieval test.
 
 % =============================================================================================
 \section{Conclusion}
@@ -542,7 +577,12 @@ configurations and one for the ablation; bootstrap intervals cover test-item sam
 Transferring numerical reasoning into sentence embeddings is attractive and easy to evaluate badly. We argued that
 claims about it require discriminative rather than absolute similarity, a parser-free test slice and a budget-matched
 reasoner-free baseline, and we provided a benchmark and protocol implementing them with pre-declared hypotheses.
-\interp{summary of which hypotheses were supported.} Promising directions are LLM reasoners for \emph{non-determinable}
+On this benchmark, direct numerical supervision transfers into all-MiniLM-L6-v2: hard-negative equivalence
+AUC rises from \res{\Ea}{equivalence.equivalence_auc_hard} to \res{\Ec}{equivalence.equivalence_auc_hard}, rank correlation with log distance from \res{\Ea}{distance.same_template_log_distance_spearman} to \res{\Ec}{distance.same_template_log_distance_spearman} and equivalence-retrieval MRR from \res{\Ea}{retrieval.mrr} to \res{\Ec}{retrieval.mrr}, with no loss on STS-B (H3, H6). In the parser-free ordering probe these gains survive
+spelled-out numbers, unlike the parser hybrids' (H5). A 1.5B LLM reasoner, however, is unreliable even on dimension
+identification (H1 partly supported), and distilling from it underperforms a reasoner-free control on almost every
+numerical metric (H4). The original encoder was less numerically blind than expected, largely through lexical overlap
+(H2 partly supported). Promising directions are LLM reasoners for \emph{non-determinable}
 numerical judgements, asymmetric heads for order, number-aware tokenisation, and evaluation on real numeric retrieval
 and entity-resolution tasks. Code and configuration:
 \url{https://github.com/TariqMahmood93/Numerical_Intelligence_Transfor}.

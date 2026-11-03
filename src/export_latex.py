@@ -68,7 +68,7 @@ def main():
         mean, std = flat.mean(), (flat.std(ddof=1) if len(flat) > 1 else None)
         for m, v in mean.items():
             define("res", f"{cfg}@{m}", fmt(v))
-            if std is not None and np.isfinite(std[m]) and std[m] > 0:
+            if std is not None and np.isfinite(std[m]) and std[m] >= 0.0005:  # below display precision = rounding noise
                 define("resstd", f"{cfg}@{m}", fmt(std[m]))
         define("res", f"{cfg}@n_seeds", str(len(flat)))
         prof = next(iter(by_seed.values())).get("cosine_profile", {})
