@@ -171,3 +171,19 @@ def fig_training_curves(histories: dict, out):
         a.set_xlabel("epoch")
     ax[1].legend(fontsize=6, loc="upper left", bbox_to_anchor=(1.0, 1.0))
     return _save(fig, os.path.join(out, "09_training_curves.png"))
+
+
+def fig_alpha_sweep(sweep: pd.DataFrame, out):
+    """Numerical quality (rho_log) and semantic quality (STS-B) as the mixing weight alpha varies."""
+    fig, ax = plt.subplots(1, 2, figsize=(11, 4))
+    styles = {"Base+Parse": ("#A8521F", "--"), "NumBridge-Exact+Parse": ("#A8521F", "-"), "NumBridge-Dual": ("#2B5C8A", "-")}
+    for model, g in sweep.groupby("model"):
+        c, ls = styles.get(model, ("#5A6372", "-"))
+        ax[0].plot(g.alpha, g.rho_log, ls, color=c, marker="o", ms=4, label=model)
+        if "stsb_spearman" in g:
+            ax[1].plot(g.alpha, g.stsb_spearman, ls, color=c, marker="o", ms=4, label=model)
+    ax[0].set_title("numerical: Spearman ρ vs log distance"); ax[1].set_title("semantic: STS-B Spearman")
+    for a in ax:
+        a.set_xlabel("α (weight on the semantic embedding)")
+    ax[0].legend(fontsize=8, loc="lower left")
+    return _save(fig, os.path.join(out, "10_alpha_sweep.png"))

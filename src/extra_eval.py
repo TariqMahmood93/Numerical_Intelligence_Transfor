@@ -225,6 +225,9 @@ def main():
     result["format_strata"] = S.round(4).to_dict(orient="records")
     result["alpha_sweep"] = A.round(4).to_dict(orient="records")
     json.dump(result, open(os.path.join(out_dir, "extra_metrics.json"), "w"), indent=1, default=float)
+    if len(A):
+        import visualisation as V
+        V.fig_alpha_sweep(A, os.path.join(a.root, "results", "figures"))
     pd.set_option("display.width", 200)
     print("\n== Q8 words slice, digit source excluded (mean over seeds)\n", num.mean().round(3).to_string())
     print("\n== Q2 by number format (seed 42)\n", S.round(3).to_string(index=False))

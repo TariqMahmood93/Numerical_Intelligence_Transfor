@@ -517,29 +517,30 @@ a different context (\res{\Ec}{context.same_quantity_diff_context_mean_sim}) bel
 \begin{table}[h]
 \centering\small
 \caption{Parser-free slice: numbers spelled out in words. The parser reads none of these statements, so hybrids fall
-back to their embedding component.}
+back to their embedding component. Retrieval and AUC exclude each query's digit twin from the gallery.}
 \label{tab:words}
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{@{}lcccc@{}}
 \toprule
-Model & MRR (words) & Equiv.\ AUC (words) & MRR (digits) & Order probe (words) \\
+Model & MRR (words) & AUC (words) & MRR (digits) & Order probe (words) \\
 \midrule
-\vBase & \respm{\Ea}{stress_words.words_mrr} & \respm{\Ea}{stress_words.words_equivalence_auc} & \respm{\Ea}{retrieval.mrr} & \respm{\Ea}{ordering.words_probe_pairwise_order_acc} \\
-\vParse & \respm{\Eb}{stress_words.words_mrr} & \respm{\Eb}{stress_words.words_equivalence_auc} & \respm{\Eb}{retrieval.mrr} & \respm{\Eb}{ordering.words_probe_pairwise_order_acc} \\
-\vExact & \respm{\Ec}{stress_words.words_mrr} & \respm{\Ec}{stress_words.words_equivalence_auc} & \respm{\Ec}{retrieval.mrr} & \respm{\Ec}{ordering.words_probe_pairwise_order_acc} \\
-\vExactParse & \respm{\Ee}{stress_words.words_mrr} & \respm{\Ee}{stress_words.words_equivalence_auc} & \respm{\Ee}{retrieval.mrr} & \respm{\Ee}{ordering.words_probe_pairwise_order_acc} \\
-\vDual & \respm{\Ef}{stress_words.words_mrr} & \respm{\Ef}{stress_words.words_equivalence_auc} & \respm{\Ef}{retrieval.mrr} & \respm{\Ef}{ordering.words_probe_pairwise_order_acc} \\
+\vBase & \respm{\Ea}{extra.nosrc_mrr} & \respm{\Ea}{extra.nosrc_equivalence_auc} & \respm{\Ea}{retrieval.mrr} & \respm{\Ea}{ordering.words_probe_pairwise_order_acc} \\
+\vParse & \respm{\Eb}{extra.nosrc_mrr} & \respm{\Eb}{extra.nosrc_equivalence_auc} & \respm{\Eb}{retrieval.mrr} & \respm{\Eb}{ordering.words_probe_pairwise_order_acc} \\
+\vExact & \respm{\Ec}{extra.nosrc_mrr} & \respm{\Ec}{extra.nosrc_equivalence_auc} & \respm{\Ec}{retrieval.mrr} & \respm{\Ec}{ordering.words_probe_pairwise_order_acc} \\
+\vExactParse & \respm{\Ee}{extra.nosrc_mrr} & \respm{\Ee}{extra.nosrc_equivalence_auc} & \respm{\Ee}{retrieval.mrr} & \respm{\Ee}{ordering.words_probe_pairwise_order_acc} \\
+\vDual & \respm{\Ef}{extra.nosrc_mrr} & \respm{\Ef}{extra.nosrc_equivalence_auc} & \respm{\Ef}{retrieval.mrr} & \respm{\Ef}{ordering.words_probe_pairwise_order_acc} \\
 \bottomrule
 \end{tabular}}
 \end{table}
-\textbf{H5 is supported, but words-slice retrieval proved uninformative.} The parser hybrids are perfect on
-digit text (MRR \res{\Eb}{retrieval.mrr}) but fall back to their embeddings on spelled-out numbers. Retrieval on the
-words slice is at ceiling for every model (MRR \res{\Ea}{stress_words.words_mrr} for \vBase), because each spelled-out
-query's digit source is in the gallery, so it measures the surface match of ``thirty-five'' to ``35'' rather than
-numeracy. The ordering probe is the informative parser-free test: \vExact (\res{\Ec}{ordering.words_probe_pairwise_order_acc}) and \vDual
-(\res{\Ef}{ordering.words_probe_pairwise_order_acc}) improve on \vBase (\res{\Ea}{ordering.words_probe_pairwise_order_acc}), whereas the hybrids collapse (\res{\Eb}{ordering.words_probe_pairwise_order_acc} and \res{\Ee}{ordering.words_probe_pairwise_order_acc}) because their probes rely on parser features that are absent.
-The learned embeddings therefore carry magnitude information that survives a change of number format; the hybrids'
-digit-text advantage does not.
+\textbf{H5 is supported.} The parser hybrids are perfect on digit text (MRR \res{\Eb}{retrieval.mrr})
+but fall back to their embeddings on spelled-out numbers. To make the words slice a real parser-free retrieval test,
+each spelled-out query's digit twin is removed from the gallery, so a model must find the same quantity written in
+other units, precisions or contexts. (With the twin present, retrieval saturates at MRR \res{\Ea}{stress_words.words_mrr}
+for every model.) On this test \vBase reaches MRR \res{\Ea}{extra.nosrc_mrr}, while \vExact reaches \res{\Ec}{extra.nosrc_mrr} and \vDual \res{\Ef}{extra.nosrc_mrr}; the hybrids gain nothing over
+their embeddings (\vParse \res{\Eb}{extra.nosrc_mrr}). The ordering probe agrees: \vExact (\res{\Ec}{ordering.words_probe_pairwise_order_acc}) and \vDual (\res{\Ef}{ordering.words_probe_pairwise_order_acc}) improve on \vBase (\res{\Ea}{ordering.words_probe_pairwise_order_acc}), whereas the hybrids
+collapse (\res{\Eb}{ordering.words_probe_pairwise_order_acc} and \res{\Ee}{ordering.words_probe_pairwise_order_acc}) because their probes rely on parser features
+that are absent. The learned embeddings therefore carry magnitude information that survives a change of number format;
+the hybrids' digit-text advantage does not. The reasoner ranking persists here too: \vVerified (\res{\Edb}{extra.nosrc_mrr}) trails the reasoner-free \vMatched (\res{\Ecb}{extra.nosrc_mrr}).
 
 \subsection{Ablation}
 \begin{table}[h]
@@ -575,6 +576,47 @@ fine-tuned.}
 \label{fig:retr}
 \end{figure}
 
+\subsection{Robustness and failure analysis}
+\emph{Number format.} Table~\ref{tab:fmt} splits the main metrics by the format of the number. \vExact improves
+on every format, most on integers ($\rho_{\log}$ \res{\Ea}{fmt.integer.rho_log}$\to$\res{\Ec}{fmt.integer.rho_log}) and least on scientific notation (\res{\Ea}{fmt.scientific.rho_log}$\to$\res{\Ec}{fmt.scientific.rho_log}). On negative values \vBase's ranking is even inverted ($\rho_{\log}=\res{\Ea}{fmt.negative.rho_log}$), which
+fine-tuning corrects (\res{\Ec}{fmt.negative.rho_log}). Scientific notation and thousands separators are rare in the
+benchmark (\res{\Ea}{fmt.scientific.n_statements} and \res{\Ea}{fmt.separator.n_statements} test statements),
+so those results are indicative only; the separator row is omitted.
+\emph{Mixing weight.} Fig.~\ref{fig:alpha} shows that $\alpha$ trades numeracy against semantics smoothly. Choosing it
+per task resolves the \vDual issue: at $\alpha=0.5$ it keeps $\rho_{\log}=\res{\Ef}{alpha.0.5.rho_log}$ and recovers
+STS-B \res{\Ef}{alpha.0.5.stsb_spearman}. The best balance overall comes from blending the parser with the
+fine-tuned embedding: \vExactParse at $\alpha=0.5$ reaches AUC \res{\Ee}{alpha.0.5.equivalence_auc}, $\rho_{\log}$ \res{\Ee}{alpha.0.5.rho_log}, MRR \res{\Ee}{alpha.0.5.mrr} and STS-B \res{\Ee}{alpha.0.5.stsb_spearman}, and it matches or exceeds \vParse on every metric at every $\alpha$ (e.g.\ $\rho_{\log}$ \res{\Ee}{alpha.0.7.rho_log} vs \res{\Eb}{alpha.0.7.rho_log} at $\alpha=0.7$): learned and symbolic numeracy are complementary.
+\emph{Failure cases} of \vExact fall into three groups. (i) Cross-scale temperatures are its weakest equivalences
+(``263.15 kelvin'' vs ``$-10$\,\textdegree C'', similarity 0.38): the affine conversion is not learned. (ii) Its
+strongest false matches are near-equal values (``50.0'' vs ``50.1 milligrams'', 0.996) and digit-count slips
+(``4000000 percent'' vs ``400000 percent'', 0.994), consistent with sub-word tokenisation of long numbers. (iii) The
+most similar cross-dimension pairs share the surface number (``8000 pounds'' vs ``8000 feet'', about 0.52), though they
+stay well below true equivalences.
+
+\begin{table}[t]
+\centering\small\setlength{\tabcolsep}{3.5pt}
+\caption{Metrics by number format (seed 42). $n$: test statements in that format.}
+\label{tab:fmt}
+\begin{tabular}{@{}lrccccc@{}}
+\toprule
+& & \multicolumn{3}{c}{$\rho_{\log}$} & \multicolumn{2}{c}{MRR} \\
+\cmidrule(lr){3-5}\cmidrule(l){6-7}
+Format & $n$ & \vBase & Exact & Dual & \vBase & Exact \\
+\midrule
+Integer & \res{\Ea}{fmt.integer.n_statements} & \res{\Ea}{fmt.integer.rho_log} & \res{\Ec}{fmt.integer.rho_log} & \res{\Ef}{fmt.integer.rho_log} & \res{\Ea}{fmt.integer.mrr} & \res{\Ec}{fmt.integer.mrr} \\
+Decimal & \res{\Ea}{fmt.decimal.n_statements} & \res{\Ea}{fmt.decimal.rho_log} & \res{\Ec}{fmt.decimal.rho_log} & \res{\Ef}{fmt.decimal.rho_log} & \res{\Ea}{fmt.decimal.mrr} & \res{\Ec}{fmt.decimal.mrr} \\
+Negative & \res{\Ea}{fmt.negative.n_statements} & \res{\Ea}{fmt.negative.rho_log} & \res{\Ec}{fmt.negative.rho_log} & \res{\Ef}{fmt.negative.rho_log} & \res{\Ea}{fmt.negative.mrr} & \res{\Ec}{fmt.negative.mrr} \\
+Scientific & \res{\Ea}{fmt.scientific.n_statements} & \res{\Ea}{fmt.scientific.rho_log} & \res{\Ec}{fmt.scientific.rho_log} & \res{\Ef}{fmt.scientific.rho_log} & \res{\Ea}{fmt.scientific.mrr} & \res{\Ec}{fmt.scientific.mrr} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t]
+\centering\figorbox{10_alpha_sweep.png}{0.85\linewidth}
+\caption{Numerical ($\rho_{\log}$) and semantic (STS-B) quality as the mixing weight $\alpha$ varies (seed 42).}
+\label{fig:alpha}
+\end{figure}
+
 % =============================================================================================
 \section{Discussion}
 \label{sec:discussion}
@@ -598,8 +640,8 @@ compute}. Their value lies elsewhere: in plausibility (is 37\,\textdegree C a no
 signals Python cannot verify and a parser cannot extract.
 
 \paragraph{Attribution: learned or parsed?} A parser hybrid will look near-perfect on any benchmark whose numbers are
-written as digits with canonical units. That is a property of the benchmark, not evidence of learning. The ordering probe on the words slice
-breaks this (retrieval on that slice is at ceiling): if the hybrid's advantage vanishes there while a fine-tuned or projected embedding keeps part of its gain,
+written as digits with canonical units. That is a property of the benchmark, not evidence of learning. The words slice
+breaks this (with each query's digit twin removed from the retrieval gallery): if the hybrid's advantage vanishes there while a fine-tuned or projected embedding keeps part of its gain,
 the embedding has internalised some numeracy. Conversely, if all configurations collapse to baseline on spelled-out
 numbers, the encoder learned digit-string regularities rather than quantities. That would be a negative result worth
 reporting, and it points to number-aware tokenisation~\cite{thawani2021survey,sundararaman2020dice} as the bottleneck.
@@ -608,7 +650,7 @@ reporting, and it points to number-aware tokenisation~\cite{thawani2021survey,su
 subspace (\vDual) can make equivalent quantities collapse while the semantic space keeps contexts apart, and it does
 this without a parser. Order, being antisymmetric, may ultimately require an asymmetric scoring
 function~\cite{vendrov2016order} rather than any cosine. In our results \vDual matches but does not beat \vExact, and its validation-tuned similarity discards the semantic
-channel ($\alpha=0$), costing 0.020 STS-B; choosing $\alpha$ per task, rather than once, is needed.
+channel ($\alpha=0$), costing 0.020 STS-B; choosing $\alpha$ per task, rather than once, recovers it (Fig.~\ref{fig:alpha}).
 
 \paragraph{Absolute vs logarithmic distance.} Logarithmic distance treats 1\,g vs 10\,g like 1\,kg vs 10\,kg, which suits
 magnitude reasoning. Relative absolute distance treats 100\,g vs 110\,g as close and is closer to tolerance-based matching
@@ -630,8 +672,7 @@ splits by design, except for seven held-out templates; the words slice tests for
 \textbf{Hyperparameters} ($\lambda$, margins, $\sigma$) were set a priori, not tuned per configuration.
 \textbf{Probes} measure linear decodability, not downstream use~\cite{hewitt2019control}. \textbf{Statistics.} Three
 seeds for the main configurations and one for the ablation; bootstrap intervals cover test-item sampling only.
-\textbf{Words slice.} Each spelled-out query's digit source is in the retrieval gallery, so words-slice retrieval is at
-ceiling; excluding the source would make it a true parser-free retrieval test.
+\textbf{Format coverage.} Scientific notation and thousands separators are rare in the benchmark, so format-level conclusions for them are indicative only.
 
 % =============================================================================================
 \section{Conclusion and Research Agenda}
@@ -640,8 +681,7 @@ Transferring numerical reasoning into sentence embeddings is attractive and easy
 three controls are necessary to make claims about it: discriminative rather than absolute similarity, a parser-free
 test slice, and a budget-matched reasoner-free baseline. We have built a benchmark and protocol that implement them, with
 pre-declared hypotheses. On this benchmark, direct numerical supervision transfers into all-MiniLM-L6-v2: hard-negative equivalence
-AUC rises from \res{\Ea}{equivalence.equivalence_auc_hard} to \res{\Ec}{equivalence.equivalence_auc_hard}, rank correlation with log distance from \res{\Ea}{distance.same_template_log_distance_spearman} to \res{\Ec}{distance.same_template_log_distance_spearman} and equivalence-retrieval MRR from \res{\Ea}{retrieval.mrr} to \res{\Ec}{retrieval.mrr}, with no loss on STS-B (H3, H6). In the parser-free ordering probe these gains survive
-spelled-out numbers, unlike the parser hybrids' (H5). A 1.5B LLM reasoner, however, is unreliable even on dimension
+AUC rises from \res{\Ea}{equivalence.equivalence_auc_hard} to \res{\Ec}{equivalence.equivalence_auc_hard}, rank correlation with log distance from \res{\Ea}{distance.same_template_log_distance_spearman} to \res{\Ec}{distance.same_template_log_distance_spearman} and equivalence-retrieval MRR from \res{\Ea}{retrieval.mrr} to \res{\Ec}{retrieval.mrr}, with no loss on STS-B (H3, H6). These gains survive spelled-out numbers, which the parser cannot read (parser-free retrieval MRR \res{\Ea}{extra.nosrc_mrr} to \res{\Ec}{extra.nosrc_mrr}), unlike the parser hybrids' (H5). A 1.5B LLM reasoner, however, is unreliable even on dimension
 identification (H1 partly supported), and distilling from it underperforms a reasoner-free control on almost every
 numerical metric (H4). The original encoder was less numerically blind than expected, largely through lexical overlap
 (H2 partly supported).

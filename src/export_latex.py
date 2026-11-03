@@ -110,6 +110,37 @@ def main():
             define("data", "stress", str(len(pd.read_csv(sw))))
         define("data", "groups_crossing", str(int((df.groupby("equivalence_group").split.nunique() > 1).sum())))
 
+    # evaluation-only follow-ups (src/extra_eval.py), keyed by the internal config ids
+    xpath = os.path.join(root, "results", "extra", "extra_metrics.json")
+    if os.path.exists(xpath):
+        ids = {"Base": "exp1_original_minilm", "Base+Parse": "exp2_parser_plus_original",
+               "NumBridge-Exact": "exp3_math_full", "NumBridge-Matched": "exp3b_math_budget",
+               "NumBridge-Raw": "exp4a_teacher_raw", "NumBridge-Verified": "exp4b_teacher_verified",
+               "NumBridge-Exact+Parse": "exp5_hybrid_finetuned_plus_parser", "NumBridge-Dual": "exp6_learned_projection",
+               "NumBridge-Abs": "exp3_math_full_absdist"}
+        x = json.load(open(xpath))
+        lines.append(r"\def\ExtraAvailable{}")
+        for model, vals in x.get("words_nosource_mean", {}).items():
+            for k, v in vals.items():
+                if not k.startswith("nosrc_"):
+                    continue
+                key = k.replace("nosrc_", "extra.nosrc_")
+                define("res", f"{ids[model]}@{key}", str(int(v)) if k.startswith("nosrc_n_") else fmt(v))
+                s = (x.get("words_nosource_std", {}).get(model) or {}).get(k)
+                if s is not None and np.isfinite(s) and s >= 0.0005 and not k.startswith("nosrc_n_"):
+                    define("resstd", f"{ids[model]}@{key}", fmt(s))
+        for r in x.get("format_strata", []):
+            for m in ("equivalence_auc", "rho_log", "mrr", "n_statements"):
+                v = r.get(m)
+                if v is not None and np.isfinite(v):
+                    define("res", f"{ids[r['model']]}@fmt.{r['format']}.{m}",
+                           str(int(v)) if m == "n_statements" else fmt(v))
+        for r in x.get("alpha_sweep", []):
+            for m in ("equivalence_auc", "rho_log", "mrr", "stsb_spearman"):
+                v = r.get(m)
+                if v is not None and np.isfinite(v):
+                    define("res", f"{ids[r['model']]}@alpha.{r['alpha']:.1f}.{m}", fmt(v))
+
     os.makedirs(os.path.dirname(out), exist_ok=True)
     fig_src = os.path.join(root, "results", "figures")
     if os.path.isdir(fig_src):  # copy figures next to the paper so \includegraphics finds them
