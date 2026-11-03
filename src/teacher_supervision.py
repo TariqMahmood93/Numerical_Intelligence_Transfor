@@ -101,7 +101,10 @@ class LLMTeacher:
             idx = order_idx[s:s + self.bs]
             enc = self.tok([prompts[i] for i in idx], return_tensors="pt", padding=True).to(self.device)
             with torch.no_grad():
-                logits = self.model(**enc).logits[:, -1, :].float()
+                try:  # only the last position is needed; avoids a (batch x length x vocab) tensor for large models
+                    logits = self.model(**enc, logits_to_keep=1).logits[:, -1, :].float()
+                except TypeError:
+                    logits = self.model(**enc).logits[:, -1, :].float()
             logp = torch.log_softmax(logits, dim=-1)
             scores = torch.stack([torch.logsumexp(logp[:, ids], dim=-1) for ids in opt_ids], dim=-1)
             out[idx] = torch.softmax(scores, dim=-1).cpu().numpy()

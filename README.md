@@ -56,3 +56,23 @@ run_hpc.slurm               SLURM template
   Exp4b − Exp3b isolates what distillation adds.
 * **Parser vs learning.** The number-words slice cannot be read by the parser. Exp6 learns a numerical subspace without
   any parser.
+
+## Extension experiments (other encoders, larger reasoners)
+
+Each extension writes only to `runs/<name>/`; the main study in `results/`, `models/` and `paper/` is never touched.
+
+| Name | What changes | Trained models (seeds 42-44) |
+|---|---|---|
+| `reasoner_3b` | LLM reasoner Qwen2.5-3B-Instruct | NumBridge-Matched, -Raw, -Verified (MiniLM) |
+| `reasoner_7b` | LLM reasoner Qwen2.5-7B-Instruct | NumBridge-Matched, -Raw, -Verified (MiniLM) |
+| `encoder_mpnet` | encoder all-mpnet-base-v2 (reuses the 1.5B labels) | Exact, Matched, Raw, Verified, Dual |
+| `encoder_labse` | encoder LaBSE (reuses the 1.5B labels) | Exact, Matched, Raw, Verified, Dual |
+
+```bash
+python main.py --download-only --download-models \
+  sentence-transformers/all-mpnet-base-v2,sentence-transformers/LaBSE,Qwen/Qwen2.5-3B-Instruct,Qwen/Qwen2.5-7B-Instruct
+for e in reasoner_3b reasoner_7b encoder_mpnet encoder_labse; do
+  sbatch --dependency=singleton run_extensions.slurm $e
+done
+```
+`--download-only` fetches files without loading them, so it is safe on a login node.

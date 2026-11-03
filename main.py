@@ -140,6 +140,14 @@ def main():
     ap.add_argument("--skip-teacher", action="store_true")
     ap.add_argument("--steps", type=int, default=None, help="override training.steps_per_epoch")
     ap.add_argument("--lr", type=float, default=None, help="override training.lr")
+    # --- extension experiments (all optional; defaults reproduce the main study unchanged)
+    ap.add_argument("--student", default=None, help="encoder to fine-tune, e.g. sentence-transformers/all-mpnet-base-v2")
+    ap.add_argument("--teacher", default=None, help="LLM reasoner, e.g. Qwen/Qwen2.5-7B-Instruct")
+    ap.add_argument("--teacher-batch", type=int, default=None, help="reasoner batch size (smaller for large models)")
+    ap.add_argument("--runs", default=None, help="comma-separated training runs to keep, e.g. exp3_math_full,exp4b_teacher_verified")
+    ap.add_argument("--seeds", default=None, help="comma-separated seeds, e.g. 42,43,44")
+    ap.add_argument("--reuse-teacher-from", default=None, help="run directory whose reasoner labels are copied and reused")
+    ap.add_argument("--download-models", default=None, help="with --download-only: comma-separated extra models to fetch")
     args = ap.parse_args()
 
     cfg = yaml.safe_load(open(args.config))
@@ -153,6 +161,12 @@ def main():
         cfg["training"]["steps_per_epoch"] = args.steps
     if args.lr:
         cfg["training"]["lr"] = args.lr
+    if args.student:
+        cfg["models"]["student"] = args.student
+    if args.teacher:
+        cfg["teacher"]["model"] = args.teacher
+    if args.seeds:
+        cfg["seeds"] = [int(x) for x in args.seeds.split(",")]
     out = os.path.abspath(args.out or (os.path.join(ROOT, "smoke_run") if args.smoke else ROOT))
     P = {k: os.path.join(out, v) for k, v in dict(data="data", models="models", results="results", fig="results/figures",
                                                    tables="results/tables", preds="results/predictions", reports="reports").items()}
@@ -172,13 +186,17 @@ def main():
 
     from teacher_supervision import select_teacher
     tcfg = select_teacher(cfg, hw)
+    if args.teacher_batch:
+        tcfg["batch_size"] = args.teacher_batch
 
     if args.download_only:
-        from sentence_transformers import SentenceTransformer
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-        SentenceTransformer(cfg["models"]["student"])
-        for m in {tcfg["model"], cfg["teacher"]["preferred_model"], cfg["teacher"]["fallback_model"]}:
-            AutoTokenizer.from_pretrained(m); AutoModelForCausalLM.from_pretrained(m)
+        # fetch files only (never load the weights): a 7B model would exhaust a login node's memory
+        from huggingface_hub import snapshot_download
+        models = [cfg["models"]["student"], tcfg["model"], cfg["teacher"]["preferred_model"], cfg["teacher"]["fallback_model"]]
+        models += [m for m in (args.download_models or "").split(",") if m]
+        for m in dict.fromkeys(models):
+            log(f"downloading {m}")
+            snapshot_download(m, ignore_patterns=["*.h5", "*.onnx", "*.ot", "*.msgpack", "onnx/*", "openvino/*", "*.tflite"])
         load_sts(cfg, log)
         log("Download complete.")
         return
@@ -223,6 +241,15 @@ def main():
     from teacher_supervision import LLMTeacher, MockTeacher, run_teacher, sample_teacher_pairs
     teacher_acc, t_pairs, t_g = {}, None, None
     tp_path = os.path.join(P["data"], "teacher_supervision_train.csv")
+    if args.reuse_teacher_from:  # copy another run's reasoner labels (same dataset, same pair budget)
+        import shutil
+        src = os.path.abspath(args.reuse_teacher_from)
+        for rel in ("data/teacher_supervision_train.csv", "data/teacher_compatibility_train.csv",
+                    "results/tables/teacher_accuracy.json"):
+            dst = os.path.join(out, rel)
+            if not os.path.exists(dst):
+                shutil.copy2(os.path.join(src, rel), dst)
+        log(f"Reasoner labels copied from {src}")
     if not args.skip_teacher:
         try:
             if os.path.exists(tp_path) and not args.no_resume and not args.smoke:
@@ -235,7 +262,8 @@ def main():
                 if args.smoke:
                     teacher = MockTeacher(noise=0.2, seed=cfg["seed"])
                 else:
-                    dtype = tcfg["dtype"] if tcfg["dtype"] != "auto" else ("float16" if dev == "cuda" else "float32")
+                    dtype = tcfg["dtype"] if tcfg["dtype"] != "auto" else \
+                        (("bfloat16" if hw.get("bf16") else "float16") if dev == "cuda" else "float32")
                     log(f"Loading teacher {tcfg['model']} ({dtype}) on {dev}; budget {len(budget)} pairs")
                     teacher = LLMTeacher(tcfg["model"], dtype, dev, tcfg["batch_size"], tcfg["max_new_tokens"])
                 t_pairs, t_g, teacher_acc = run_teacher(teacher, budget, train, tcfg["ratio_fraction"], cfg["seed"])
@@ -277,6 +305,10 @@ def main():
     if cfg["experiments"]["run_ablation"]:
         for name, keys in abl_def.items():
             runs.append((f"abl_{name}", s0, sup_full, {k: (L[k] if k in keys else 0.0) for k in L}, 0, cfg))
+    if args.runs:
+        keep = {r.strip() for r in args.runs.split(",") if r.strip()}
+        runs = [r for r in runs if r[0] in keep]
+        log(f"Training runs restricted to {sorted(keep)}: {len(runs)} run(s)")
 
     train_logs = {}
     for name, s, sup, lam, proj, c in runs:

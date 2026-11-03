@@ -27,3 +27,6 @@ paper/*.fls
 paper/*.synctex.gz
 paper/main.pdf
 paper/main_ieee.pdf
+
+# extension experiments (run_extensions.slurm)
+runs/
